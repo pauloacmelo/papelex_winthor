@@ -1,0 +1,5 @@
+cx-Oracle
+PySide
+requests
+json
+urllib2
