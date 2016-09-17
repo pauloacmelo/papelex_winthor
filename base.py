@@ -76,7 +76,7 @@ class DatabaseAdapter:
 
     def query(self, query, **kwargs):
         self.cur.execute(query.encode('utf-8'), kwargs)
-        header = [desc[0] for desc in self.cur.description]
+        header = [desc[0].lower() for desc in self.cur.description]
         result = [OrderedDict(zip(header, row)) for row in self.cur]
         return result
 
@@ -84,7 +84,7 @@ class DatabaseAdapter:
         self.cur.execute(query.encode('utf-8'), kwargs)
         self.conn.commit()
 
-    def close():
+    def close(self):
         self.cur.close()
         self.conn.close()
 

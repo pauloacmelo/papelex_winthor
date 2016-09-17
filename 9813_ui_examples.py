@@ -15,36 +15,33 @@ class Routine9812(WinthorRoutine):
     def initUI(self):
         super(Routine9812, self).initUI()
         # saself.form = QFormLayout(self)
-        self.textInput = QtGui.QLineEdit(self)
-        self.mainwindow.addWidget(self.textInput)
-        but = QtGui.QPushButton('CALCULAR', self)
+        textInput = QtGui.QLineEdit(self)
+        self.mainwindow.addWidget(textInput)
+        combo = QtGui.QComboBox(self)
+        self.mainwindow.addWidget(combo)
+        combo.addItem(u'Opção 1', combo)
+        combo.addItem(u'Opção 2', combo)
+        but = QtGui.QPushButton('TEST', self)
         but.clicked.connect(self.buttonAction)
         self.mainwindow.addWidget(but)
-        self.table_view = QtGui.QTableView(self)
-        self.header = [u'Transportadora', u'Preço', u'Cubagem', u'Prazo']
-        self.table_view.setModel(QTableModel(self, [[]], self.header))
-        self.mainwindow.addWidget(self.table_view)
+        table_view = QtGui.QTableView(self)
+        header = [u'Transportadora', u'Preço', u'Cubagem', u'Prazo']
+        data = [
+            ['1, 1', '1, 2', '1, 3'],
+            ['2, 1', '2, 2', '2, 3'],
+            ['3, 1', '3, 2', '3, 3'],]
+        table_view.setModel(QTableModel(self, data, header))
+        self.mainwindow.addWidget(table_view)
 
     def buttonAction(self):
-        order_id = self.textInput.text()
-        products = self.db.query("select PCPRODUT.PESOLIQ weight, PCPEDI.PVENDA cost_of_goods, PCPRODUT.LARGURAM3 width, PCPRODUT.ALTURAM3 height, PCPRODUT.COMPRIMENTOM3 length, PCPEDI.QT quantity, PCPRODUT.CODPROD sku_id, PCPRODUT.DESCRICAO description, 'true' can_group from PCPEDI, PCPRODUT where 1=1 and PCPEDI.CODPROD = PCPRODUT.CODPROD and NUMPED = %s" % order_id)
-        products = [dict(p) for p in products]
-        cep = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCPEDC inner join PCCLIENT on PCPEDC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCPEDC.CODCLI = PCCLIENTENDENT.CODCLI and PCPEDC.CODENDENTCLI = PCCLIENTENDENT.CODENDENTCLI where PCPEDC.NUMPED = %s" % order_id)[0]['cep']
-        cep = cep[:5] + '-' + cep[-3:]
-        quote = self.quotation(cep, products)
-        result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days']] for row in quote['content']['delivery_options']]
-        self.updateTable(result)
+        print self.db.query('select CODPROD from PCPEDI where NUMPED = %s' % 224010951)
 
-    def updateTable(self, data):
-        # data = [
-        #     ['1, 1', '1, 2', '1, 3'],
-        #     ['2, 1', '2, 2', '2, 3'],
-        #     ['3, 1', '3, 2', '3, 3'],]
-        self.table_view.setModel(QTableModel(self, data, self.header))
+    def quote_order_shipping(order_id):
+        self.quotation()
 
     # destination_zip_code example: '20756-200'
     # products example: [{"weight": 2.1,"cost_of_goods": 101.23,"width": 13,"height": 10,"length": 10,"quantity": 1,"sku_id": "1","description": "descrição do item","can_group": "true"}]
-    def quotation(self, destination_zip_code, products):
+    def quotation(destination_zip_code, products):
         data = {
           "origin_zip_code": "21010-410",
           "destination_zip_code": destination_zip_code,
@@ -69,7 +66,6 @@ class Routine9812(WinthorRoutine):
             "url": "http://www.intelipost.com.br/checkout/cart/"
           }
         }
-        print json.dumps(data)
         req = urllib2.Request('https://api.intelipost.com.br/api/v1/quote_by_product', json.dumps(data))
         req.add_header('Content-Type', 'application/json')
         req.add_header('api_key', '36a3fa0d4108231864a60988a15272b9fd692c3320206ceb3e85e61688e11d79')
