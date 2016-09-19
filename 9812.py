@@ -1,7 +1,6 @@
 # coding: utf-8
 from base import *
 from PySide import QtGui, QtCore
-import requests
 import json
 import urllib2
 

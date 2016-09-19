@@ -68,11 +68,11 @@ class PicButton(QtGui.QAbstractButton):
 
 class DatabaseAdapter:
     def __init__(self, user='PAPELEX', password='FG2HU3DV4T', alias='WINT'):
-        try:
-            self.conn = cx_Oracle.connect(user, password, alias)
-            self.cur = self.conn.cursor()        
-        except Exception, e:
-            return False
+        # try:
+        self.conn = cx_Oracle.connect(user, password, alias)
+        self.cur = self.conn.cursor()        
+        # except Exception, e:
+        #     return False
 
     def query(self, query, **kwargs):
         self.cur.execute(query.encode('utf-8'), kwargs)
