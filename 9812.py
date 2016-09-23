@@ -13,7 +13,7 @@ class Routine9812(WinthorRoutine):
 
     def initUI(self):
         super(Routine9812, self).initUI()
-        # saself.form = QFormLayout(self)
+        # self.form = QFormLayout(self)
         self.textInput = QtGui.QLineEdit(self)
         self.mainwindow.addWidget(self.textInput)
         but = QtGui.QPushButton('CALCULAR', self)
@@ -35,10 +35,6 @@ class Routine9812(WinthorRoutine):
         self.updateTable(result)
 
     def updateTable(self, data):
-        # data = [
-        #     ['1, 1', '1, 2', '1, 3'],
-        #     ['2, 1', '2, 2', '2, 3'],
-        #     ['3, 1', '3, 2', '3, 3'],]
         self.table_view.setModel(QTableModel(self, data, self.header))
 
     # destination_zip_code example: '20756-200'

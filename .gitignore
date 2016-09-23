@@ -4,3 +4,4 @@ Examples
 .pydevproject
 .project
 .settings
+/db/node_modules
