@@ -17,25 +17,20 @@ function run_query(user, password, alias, query, success, fail) {
       user          : user,
       password      : password,
       connectString : alias,
-    })
-    .then(function(connection) {
-      return connection.execute(query)
-        .then(function(result) {
-          connection.release();
-          response = toObject(result.metaData, result.rows)
+    }, function(err, connection) {
+      if (err) { console.error(err.message); fail(); return; }
+
+      connection.execute(
+        query,
+        function(err, result) {
+          if (err) { console.error(err.message); fail(); return; }
+
+          response = toObject(result.metaData, result.rows);
           console.log(response);
           success(response);
-        })
-        .catch(function(err) {
-          console.log(err.message);
-          connection.release();
-          fail();
+          return;
         });
     })
-    .catch(function(err) {
-      console.error(err.message);
-      fail();
-    });
 }
 
 function toObject(header, rows) {
@@ -62,7 +57,6 @@ app.post('/query', function (req, res) {
     }, function() {
       console.log('fail');
     });
-  res.json([{'col1': 1, 'col2': 1}, {'col1': 2, 'col2': 2}]);
   console.log();
 });
 
