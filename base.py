@@ -94,7 +94,6 @@ class DatabaseAdapter:
     def __init__(self, user='PAPELEX', password='FG2HU3DV4T', alias='WINT'):
         try:
             # Tries to connect to database directly
-            teste
             self.conn = cx_Oracle.connect(user, password, alias)
             self.cur = self.conn.cursor()
             self.mode = 'direct'
