@@ -67,29 +67,6 @@ class PicButton(QtGui.QAbstractButton):
         return QtCore.QSize(20, 20)
 
 
-# class DatabaseAdapter:
-#     def __init__(self, user='PAPELEX', password='FG2HU3DV4T', alias='WINT'):
-#         # try:
-#         self.conn = cx_Oracle.connect(user, password, alias)
-#         self.cur = self.conn.cursor()        
-#         # except Exception, e:
-#         #     return False
-
-#     def query(self, query, **kwargs):
-#         self.cur.execute(query.encode('utf-8'), kwargs)
-#         header = [desc[0].lower() for desc in self.cur.description]
-#         result = [OrderedDict(zip(header, row)) for row in self.cur]
-#         return result
-
-#     def execute(self, query, **kwargs):
-#         self.cur.execute(query.encode('utf-8'), kwargs)
-#         self.conn.commit()
-
-#     def close(self):
-#         self.cur.close()
-#         self.conn.close()
-
-
 class DatabaseAdapter:
     def __init__(self, user='PAPELEX', password='FG2HU3DV4T', alias='WINT'):
         try:
@@ -103,7 +80,7 @@ class DatabaseAdapter:
             self.user = user
             self.password = password
             self.alias = alias
-            self.endpoint = 'http://192.168.24.45:8080/'
+            self.endpoint = 'http://192.168.24.45:8888/'
             self.mode = 'webserver'
 
     def query(self, query, **kwargs):

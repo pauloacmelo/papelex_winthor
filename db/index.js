@@ -2,6 +2,7 @@ var oracledb = require('oracledb');
 var express = require('express');
 var bodyParser = require('body-parser')
 var app = express();
+var PORT = 8888;
 
 // Middleware
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
@@ -45,7 +46,7 @@ function toObject(header, rows) {
 }
 
 app.get('/', function(req, res) {
-  res.send('DB connection happily listening on port 8080!')
+  res.send('DB connection happily listening on port ' + PORT + '!')
 });
 
 app.post('/query', function (req, res) {
@@ -73,7 +74,7 @@ app.post('/execute', function (req, res) {
   console.log();
 });
 
-app.listen(8080, function () {
-  console.log('DB connection happily listening on port 8080!');
+app.listen(PORT, function () {
+  console.log('DB connection happily listening on port ' + PORT + '!');
 });
 
