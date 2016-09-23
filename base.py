@@ -103,7 +103,7 @@ class DatabaseAdapter:
             self.user = user
             self.password = password
             self.alias = alias
-            self.endpoint = 'http://localhost:8080/'
+            self.endpoint = 'http://192.168.24.15:8080/'
             self.mode = 'webserver'
 
     def query(self, query, **kwargs):
