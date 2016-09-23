@@ -55,13 +55,13 @@ app.get('/', function(req, res) {
 
 app.post('/query', function (req, res) {
   console.log(req.body);
-  // run_query(req.body.user, req.body.password, req.body.alias, req.body.query,
-  //   function(result) {
-  //     console.log('success');
-  //     res.json(result);
-  //   }, function() {
-  //     console.log('fail');
-  //   });
+  run_query(req.body.user, req.body.password, req.body.alias, req.body.query,
+    function(result) {
+      console.log('success');
+      res.json(result);
+    }, function() {
+      console.log('fail');
+    });
   res.json([{'col1': 1, 'col2': 1}, {'col1': 2, 'col2': 2}]);
   console.log();
 });
