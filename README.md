@@ -7,6 +7,15 @@ For testing use:
 python 9812.py USERNAME DB_PASSWORD DB_ALIAS DB_USER APP_NUMBER
 ```
 
+To deploy run:
+
+```
+pyinstaller -F -w 9812.py -i static\Winthor.ico
+```
+
+For documentationon on PyQt, access:
+    http://tutorialspoint.com/pyqt
+
 
 TODO:
 

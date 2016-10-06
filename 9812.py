@@ -14,8 +14,16 @@ class Routine9812(WinthorRoutine):
     def initUI(self):
         super(Routine9812, self).initUI()
         # self.form = QFormLayout(self)
-        self.textInput = QtGui.QLineEdit(self)
-        self.mainwindow.addWidget(self.textInput)
+        self.orderLabel = QtGui.QLabel(self)
+        self.orderLabel.setText('Pedido:')
+        self.mainwindow.addWidget(self.orderLabel)
+        self.orderInput = QtGui.QLineEdit(self)
+        self.mainwindow.addWidget(self.orderInput)
+        self.estimateLabel = QtGui.QLabel(self)
+        self.estimateLabel.setText(u'Orçamento:')
+        self.mainwindow.addWidget(self.estimateLabel)
+        self.estimateInput = QtGui.QLineEdit(self)
+        self.mainwindow.addWidget(self.estimateInput)
         but = QtGui.QPushButton('CALCULAR', self)
         but.clicked.connect(self.buttonAction)
         self.mainwindow.addWidget(but)
@@ -25,14 +33,28 @@ class Routine9812(WinthorRoutine):
         self.mainwindow.addWidget(self.table_view)
 
     def buttonAction(self):
-        order_id = self.textInput.text()
-        products = self.db.query("select PCPRODUT.PESOLIQ weight, PCPEDI.PVENDA cost_of_goods, PCPRODUT.LARGURAM3 width, PCPRODUT.ALTURAM3 height, PCPRODUT.COMPRIMENTOM3 length, PCPEDI.QT quantity, PCPRODUT.CODPROD sku_id, PCPRODUT.DESCRICAO description, 'true' can_group from PCPEDI, PCPRODUT where 1=1 and PCPEDI.CODPROD = PCPRODUT.CODPROD and NUMPED = %s" % order_id)
-        products = [dict(p) for p in products]
-        cep = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCPEDC inner join PCCLIENT on PCPEDC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCPEDC.CODCLI = PCCLIENTENDENT.CODCLI and PCPEDC.CODENDENTCLI = PCCLIENTENDENT.CODENDENTCLI where PCPEDC.NUMPED = %s" % order_id)[0]['cep']
-        cep = cep[:5] + '-' + cep[-3:]
-        quote = self.quotation(cep, products)
-        result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days']] for row in quote['content']['delivery_options']]
-        self.updateTable(result)
+        order_id = self.orderInput.text()
+        estimate_id = self.estimateInput.text()
+        if order_id and len(order_id) > 0:
+            products = self.db.query("select PCPRODUT.PESOLIQ weight, PCPEDI.PVENDA cost_of_goods, PCPRODUT.LARGURAM3 width, PCPRODUT.ALTURAM3 height, PCPRODUT.COMPRIMENTOM3 length, PCPEDI.QT quantity, PCPRODUT.CODPROD sku_id, PCPRODUT.DESCRICAO description, 'true' can_group from PCPEDI, PCPRODUT where 1=1 and PCPEDI.CODPROD = PCPRODUT.CODPROD and NUMPED = %s" % order_id)
+            products = [dict(p) for p in products]
+            cep = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCPEDC inner join PCCLIENT on PCPEDC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCPEDC.CODCLI = PCCLIENTENDENT.CODCLI and PCPEDC.CODENDENTCLI = PCCLIENTENDENT.CODENDENTCLI where PCPEDC.NUMPED = %s" % order_id)[0]['cep']
+            cep = cep[:5] + '-' + cep[-3:]
+            quote = self.quotation(cep, products)
+            result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days']] for row in quote['content']['delivery_options']]
+            self.updateTable(result)
+        elif estimate_id and len(estimate_id) > 0:
+            products = self.db.query("select PCPRODUT.PESOLIQ weight, PCORCAVENDAI.PVENDA cost_of_goods, PCPRODUT.LARGURAM3 width, PCPRODUT.ALTURAM3 height, PCPRODUT.COMPRIMENTOM3 length, PCORCAVENDAI.QT quantity, PCPRODUT.CODPROD sku_id, PCPRODUT.DESCRICAO description, 'true' can_group from PCORCAVENDAI, PCPRODUT where 1=1 and PCORCAVENDAI.CODPROD = PCPRODUT.CODPROD and NUMORCA = %s" % estimate_id)
+            products = [dict(p) for p in products]
+            cep = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCORCAVENDAC inner join PCCLIENT on PCORCAVENDAC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCORCAVENDAC.CODCLI = PCCLIENTENDENT.CODCLI and PCORCAVENDAC.CODENDENT = PCCLIENTENDENT.CODENDENTCLI where PCORCAVENDAC.NUMORCA = %s" % estimate_id)[0]['cep']
+            cep = cep[:5] + '-' + cep[-3:]
+            quote = self.quotation(cep, products)
+            result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days']] for row in quote['content']['delivery_options']]
+            self.updateTable(result)
+        else:
+            QtGui.QMessageBox.critical(self,
+                "Erro!",
+                u"Preencha o número do pedido ou do orçamento.")
 
     def updateTable(self, data):
         self.table_view.setModel(QTableModel(self, data, self.header))
