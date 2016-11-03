@@ -87,7 +87,7 @@ class DatabaseAdapter:
         if self.mode == 'direct':
             self.cur.execute(query.encode('utf-8'), kwargs)
             header = [desc[0].lower() for desc in self.cur.description]
-            result = [OrderedDict(zip(header, row)) for row in self.cur]
+            result = [OrderedDict(zip(header, [e.decode('utf-8', 'ignore') if isinstance(e, basestring) else e for e in row] )) for row in self.cur]
             return result
         else:
             data = {
@@ -130,6 +130,7 @@ class WinthorRoutine(QtGui.QMainWindow):
     def __init__(self, number, name, username, db_pass, db_alias, db_user, *args):
         super(WinthorRoutine, self).__init__()
         print(name)
+        self.number = number
         self.name = str(number) + u' - ' + name
         self.username = username
         self.db_pass = db_pass
@@ -163,7 +164,7 @@ class WinthorRoutine(QtGui.QMainWindow):
         self.companyLabel = self.header_label('Winthor - Papelex', 10, (10, 25), 500)
         conntext = '%s(%s@%s)' % (self.username, self.db_alias, self.db_user)
         self.connectionLabel = self.header_label(conntext, 10, (500, 25), 150)
-        self.routineLabel = self.header_label('PCPPL9812', 10, (650, 25), 100)
+        self.routineLabel = self.header_label('PCPPL' + str(self.number), 10, (650, 25), 100)
         self.versionLabel = self.header_label('23.0.1', 10, (750, 25), 50)
 
         self.setGeometry(100, 100, 800, 600)
