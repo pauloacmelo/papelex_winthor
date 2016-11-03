@@ -38,7 +38,13 @@ class Routine9812(WinthorRoutine):
         if order_id and len(order_id) > 0:
             products = self.db.query("select PCPRODUT.PESOLIQ weight, PCPEDI.PVENDA cost_of_goods, PCPRODUT.LARGURAM3 width, PCPRODUT.ALTURAM3 height, PCPRODUT.COMPRIMENTOM3 length, PCPEDI.QT quantity, PCPRODUT.CODPROD sku_id, PCPRODUT.DESCRICAO description, 'true' can_group from PCPEDI, PCPRODUT where 1=1 and PCPEDI.CODPROD = PCPRODUT.CODPROD and NUMPED = %s" % order_id)
             products = [dict(p) for p in products]
-            cep = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCPEDC inner join PCCLIENT on PCPEDC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCPEDC.CODCLI = PCCLIENTENDENT.CODCLI and PCPEDC.CODENDENTCLI = PCCLIENTENDENT.CODENDENTCLI where PCPEDC.NUMPED = %s" % order_id)[0]['cep']
+            result = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCPEDC inner join PCCLIENT on PCPEDC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCPEDC.CODCLI = PCCLIENTENDENT.CODCLI and PCPEDC.CODENDENTCLI = PCCLIENTENDENT.CODENDENTCLI where PCPEDC.NUMPED = %s" % order_id)
+            if len(result) == 0:
+                QtGui.QMessageBox.critical(self,
+                    "Erro!",
+                    u"Preencha o número do pedido ou do orçamento.")
+                return;
+            cep = result[0]['cep']
             cep = cep[:5] + '-' + cep[-3:]
             quote = self.quotation(cep, products)
             result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days']] for row in quote['content']['delivery_options']]
@@ -46,7 +52,13 @@ class Routine9812(WinthorRoutine):
         elif estimate_id and len(estimate_id) > 0:
             products = self.db.query("select PCPRODUT.PESOLIQ weight, PCORCAVENDAI.PVENDA cost_of_goods, PCPRODUT.LARGURAM3 width, PCPRODUT.ALTURAM3 height, PCPRODUT.COMPRIMENTOM3 length, PCORCAVENDAI.QT quantity, PCPRODUT.CODPROD sku_id, PCPRODUT.DESCRICAO description, 'true' can_group from PCORCAVENDAI, PCPRODUT where 1=1 and PCORCAVENDAI.CODPROD = PCPRODUT.CODPROD and NUMORCA = %s" % estimate_id)
             products = [dict(p) for p in products]
-            cep = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCORCAVENDAC inner join PCCLIENT on PCORCAVENDAC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCORCAVENDAC.CODCLI = PCCLIENTENDENT.CODCLI and PCORCAVENDAC.CODENDENT = PCCLIENTENDENT.CODENDENTCLI where PCORCAVENDAC.NUMORCA = %s" % estimate_id)[0]['cep']
+            result = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCORCAVENDAC inner join PCCLIENT on PCORCAVENDAC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCORCAVENDAC.CODCLI = PCCLIENTENDENT.CODCLI and PCORCAVENDAC.CODENDENT = PCCLIENTENDENT.CODENDENTCLI where PCORCAVENDAC.NUMORCA = %s" % estimate_id)
+            if len(result) == 0:
+                QtGui.QMessageBox.critical(self,
+                    "Erro!",
+                    u"Preencha o número do pedido ou do orçamento.")
+                return;
+            cep = result[0]['cep']
             cep = cep[:5] + '-' + cep[-3:]
             quote = self.quotation(cep, products)
             result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days']] for row in quote['content']['delivery_options']]
@@ -86,10 +98,11 @@ class Routine9812(WinthorRoutine):
             "url": "http://www.intelipost.com.br/checkout/cart/"
           }
         }
+        print data
         print json.dumps(data)
         req = urllib2.Request('https://api.intelipost.com.br/api/v1/quote_by_product', json.dumps(data))
         req.add_header('Content-Type', 'application/json')
-        req.add_header('api_key', '36a3fa0d4108231864a60988a15272b9fd692c3320206ceb3e85e61688e11d79')
+        req.add_header('api_key', 'ca770671cccc21b75bea36130145f11e8ef92d4fcb186aff6e91bdb6cab20a26')
         res = urllib2.urlopen(req)
         return json.loads(res.read())
 
