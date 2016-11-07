@@ -51,8 +51,10 @@ class Routine9813(WinthorRoutine):
         row.addWidget(QtGui.QLabel("Progresso:"))
         row.addWidget(self.priceProgressBar)
         self.priceStopButton = QtGui.QPushButton('Parar', self)
+        self.priceStopButton.setEnabled(False)
         self.priceStopButton.clicked.connect(self.togglePriceWorker)
         self.priceRestartButton = QtGui.QPushButton('Reiniciar', self)
+        self.priceRestartButton.setEnabled(False)
         self.priceRestartButton.clicked.connect(self.resetPriceWorker)
         buttonRow = QtGui.QHBoxLayout()
         buttonRow.addStretch(1)
@@ -74,8 +76,10 @@ class Routine9813(WinthorRoutine):
         row.addWidget(QtGui.QLabel("Progresso:"))
         row.addWidget(self.stockProgressBar)
         self.stockStopButton = QtGui.QPushButton('Parar', self)
+        self.stockStopButton.setEnabled(False)
         self.stockStopButton.clicked.connect(self.toggleStockWorker)
         self.stockRestartButton = QtGui.QPushButton('Reiniciar', self)
+        self.stockRestartButton.setEnabled(False)
         self.stockRestartButton.clicked.connect(self.resetStockWorker)
         buttonRow = QtGui.QHBoxLayout()
         buttonRow.addStretch(1)
@@ -113,6 +117,9 @@ class Routine9813(WinthorRoutine):
     def setPriceProgress(self, progress, log):
         self.priceProgressBar.setValue(progress)
         self.priceLog.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S')  + ': ' + log)
+        cursor = self.priceLog.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        self.priceLog.setTextCursor(cursor)
 
     def togglePriceWorker(self):
         self.priceWorker.toggle()
@@ -131,6 +138,9 @@ class Routine9813(WinthorRoutine):
     def setStockProgress(self, progress, log):
         self.stockProgressBar.setValue(progress)
         self.stockLog.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S')  + ': ' + log)
+        cursor = self.stockLog.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        self.stockLog.setTextCursor(cursor)
 
     def toggleStockWorker(self):
         self.stockWorker.toggle()
@@ -149,6 +159,9 @@ class Routine9813(WinthorRoutine):
     def setOrdersProgress(self, progress, log):
         self.ordersProgressBar.setValue(progress)
         self.ordersLog.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S')  + ': ' + log)
+        cursor = self.ordersLog.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        self.ordersLog.setTextCursor(cursor)
 
     def toggleOrdersWorker(self):
         self.ordersWorker.toggle()
@@ -180,14 +193,55 @@ class PriceWorker(QtCore.QThread):
 
     def run(self):
         while True:
-            self.reset()
-            while self.iteration <= 100:
-                if self.isRunning:
-                    self.iteration = self.iteration + 1
-                    self.updateProgress.emit(
-                        self.iteration, 'updateProgress ' + str(self.iteration) + '...')
-                time.sleep(0.05)
-            print 'Ended!'
+            try:
+                self.reset()
+                self.updateProgress.emit(0, 'Progress: ' + str(0) + '%.')
+
+                # Get Winthor data 
+                self.updateProgress.emit(0, 'Searching product prices on Winthor...')
+                w = Winthor()
+                winthor_products = w.getPrices()
+                winthor_sku_to_price = dict([(p['codigo_produto'], p['preco_venda']) for p in winthor_products])
+                self.updateProgress.emit(4, 'Found ' + str(len(winthor_products)) + ' product prices on Winthor!')
+                self.updateProgress.emit(4, 'Progress: ' + str(4) + '%.')
+
+                # Get Magento data
+                self.updateProgress.emit(4, 'Connecting to Magento platform...')
+                magento = Magento()
+                self.updateProgress.emit(13, 'Connected!')
+                self.updateProgress.emit(13, 'Progress: ' + str(13) + '%.')
+                self.updateProgress.emit(13, 'Searching products on Magento...')
+                magento_products = sorted(
+                    [p for p in magento.getProducts() if p['sku'].isdigit()],
+                    key=lambda p: int(p['sku'])
+                )
+                self.updateProgress.emit(23, 'Found ' + str(len(magento_products)) + ' products on Magento!')
+
+                # Update magento data
+                steps = len(magento_products)
+                for i, magento_product in enumerate(magento_products):
+                    self.updateProgress.emit(23 + i*77.0/steps, 'Progress: ' + str(23 + i*77.0/steps) + '%.')
+                    old_price = round(float(magento.getProductPrice(magento_product['sku'])['price']), 2)
+                    new_price = round(float(winthor_sku_to_price[magento_product['sku']]), 2)
+                    if old_price == new_price: continue
+                    self.updateProgress.emit(23 + i*77.0/steps, 'Updating price on item #%s from %s to %s...' % (magento_product['sku'], old_price, new_price))
+                    magento.setProductPrice({
+                        'sku': magento_product['sku'],
+                        'product_id': magento_product['product_id'],
+                        'price': str(new_price),
+                        'old_price': old_price,
+                    })
+
+                self.updateProgress.emit(100, 'Progress: ' + str(100) + '%.')
+                self.updateProgress.emit(100, '=========================')
+                self.updateProgress.emit(100, '')
+                self.updateProgress.emit(100, '')
+                self.reset()
+            except Exception as e:
+                self.updateProgress.emit(0, 'Error: %s' % str(e).encode('utf-8'))
+                self.updateProgress.emit(100, '=========================')
+                self.updateProgress.emit(100, '')
+                self.updateProgress.emit(100, '')
 
     def toggle(self):
         self.isRunning = not self.isRunning
@@ -209,57 +263,61 @@ class StockWorker(QtCore.QThread):
 
     def run(self):
         while True:
-            self.reset()
-            self.updateProgress.emit(0, 'Progress: ' + str(0) + '%.')
-            self.updateProgress.emit(0, 'Connecting to Magento platform...')
-            magento = Magento()
-            self.updateProgress.emit(2, 'Progress: ' + str(2) + '%.')
-            self.updateProgress.emit(2, 'Connected!')
-            self.updateProgress.emit(2, 'Searching products on Magento...')
-            magento_products = magento.getProducts()
-            self.updateProgress.emit(12, 'Progress: ' + str(12) + '%.')
-            self.updateProgress.emit(12, 'Found ' + str(len(magento_products)) + ' products on Magento!')
-            magento_sku_to_id = dict([(p['sku'], p['product_id']) for p in magento_products])
-            magento_product_ids = [p['product_id'] for p in magento_products]
-            self.updateProgress.emit(12, 'Searching products on Magento...')
-            magento_qtys = magento.getProductQuantities(magento_product_ids)
-            qtys_hash = dict([(p['sku'], p['qty']) for p in magento_qtys])
-            self.updateProgress.emit(22, 'Progress: ' + str(22) + '%.')
-            self.updateProgress.emit(22, 'Found ' + str(len(magento_qtys)) + ' product quantities on Magento!')
-            print [id for id in magento_sku_to_id.values() if id not in [q['product_id'] for q in magento_qtys]]
-            self.updateProgress.emit(22, 'Searching product quantities on Magento...')
-            w = Winthor()
-            quantities = w.getQuantities()
-            self.updateProgress.emit(29, 'Progress: ' + str(29) + '%.')
-            self.updateProgress.emit(29, 'Found ' + str(len(quantities)) + ' product quantities on Winthor!')
-            products_qty = sorted([
-                {
-                    'product_id': magento_sku_to_id[q['codigo_produto']],
-                    'sku': q['codigo_produto'],
-                    'qty': int(q['quantidade_disponivel']),
-                    'old_qty': int(float(qtys_hash[q['codigo_produto']]))
-                }
-                for q in quantities
-                if q['codigo_produto'] in magento_sku_to_id
-                    and q['codigo_produto'] in qtys_hash
-                    and float(q['quantidade_disponivel']) != float(qtys_hash[q['codigo_produto']])
-                    and q['codigo_produto'] in ['1001', '1002', '1003']
-            ], key=lambda p: p['sku'])
-            self.updateProgress.emit(29, 'Preparing to update ' + str(len(products_qty)) + ' products on Magento!')
-            STEP = 50.0
-            steps = int(math.ceil(len(products_qty)/STEP))
-            for i in range(steps):
-                prods = products_qty[int(i*STEP):int(i*STEP+STEP)]
-                print prods
-                magento.setProductQuantities(prods)
-                self.updateProgress.emit(29 + (i+1)*71.0/steps, 'Progress: ' + str(29 + (i+1)*71.0/steps) + '%.')
-                self.updateProgress.emit(29 + (i+1)*71.0/steps, 'Updated ' + str(len(prods)) + ' products on Magento!')
-            self.updateProgress.emit(100, 'Progress: ' + str(100) + '%.')
-            self.updateProgress.emit(100, '=========================')
-            self.updateProgress.emit(100, '')
-            self.updateProgress.emit(100, '')
-            self.reset()
-            print 'Ended!'
+            try:
+                self.reset()
+                self.updateProgress.emit(0, 'Progress: ' + str(0) + '%.')
+
+                # Get Winthor data
+                self.updateProgress.emit(0, 'Searching product quantities on Winthor...')
+                w = Winthor()
+                winthor_products = w.getQuantities()
+                winthor_products_skus = [p['codigo_produto'] for p in winthor_products]
+                self.updateProgress.emit(4, 'Found ' + str(len(winthor_products)) + ' product quantities on Winthor!')
+                self.updateProgress.emit(4, 'Progress: ' + str(4) + '%.')
+
+                # Get Magento data
+                self.updateProgress.emit(4, 'Connecting to Magento platform...')
+                magento = Magento()
+                self.updateProgress.emit(13, 'Connected!')
+                self.updateProgress.emit(13, 'Progress: ' + str(13) + '%.')
+                self.updateProgress.emit(13, 'Searching product quantities on Magento...')
+                magento_products = magento.getProductQuantities(winthor_products_skus)
+                magento_sku_to_qty = dict([(p['sku'], p['qty']) for p in magento_products])
+                magento_sku_to_id = dict([(p['sku'], p['product_id']) for p in magento_products])
+                self.updateProgress.emit(23, 'Found ' + str(len(magento_products)) + ' product quantities on Magento!')
+                self.updateProgress.emit(23, 'Progress: ' + str(23) + '%.')
+
+                # Update Magento data
+                products_qty = sorted([
+                    {
+                        'product_id': magento_sku_to_id[q['codigo_produto']],
+                        'sku': q['codigo_produto'],
+                        'qty': int(q['quantidade_disponivel']),
+                        'old_qty': int(float(magento_sku_to_qty[q['codigo_produto']]))
+                    }
+                    for q in winthor_products
+                    if q['codigo_produto'] in magento_sku_to_id
+                        and float(q['quantidade_disponivel']) != float(magento_sku_to_qty[q['codigo_produto']])
+                ], key=lambda p: p['sku'])
+                self.updateProgress.emit(23, 'Preparing to update ' + str(len(products_qty)) + ' products on Magento...')
+                STEP = 100.0
+                steps = int(math.ceil(len(products_qty)/STEP))
+                for i in range(steps):
+                    prods = products_qty[int(i*STEP):int(i*STEP+STEP)]
+                    print prods
+                    magento.setProductQuantities(prods)
+                    self.updateProgress.emit(23 + (i+1)*77.0/steps, 'Progress: ' + str(23 + (i+1)*77.0/steps) + '%.')
+                    self.updateProgress.emit(23 + (i+1)*77.0/steps, 'Updated ' + str(len(prods)) + ' products on Magento!')
+                self.updateProgress.emit(100, 'Progress: ' + str(100) + '%.')
+                self.updateProgress.emit(100, '=========================')
+                self.updateProgress.emit(100, '')
+                self.updateProgress.emit(100, '')
+            except Exception as e:
+                self.updateProgress.emit(0, 'Error: %s' % str(e).encode('utf-8'))
+                self.updateProgress.emit(100, '=========================')
+                self.updateProgress.emit(100, '')
+                self.updateProgress.emit(100, '')
+
 
     def toggle(self):
         self.isRunning = not self.isRunning
@@ -279,6 +337,7 @@ class OrdersWorker(QtCore.QThread):
         QtCore.QThread.__init__(self)
 
     def run(self):
+        db = DatabaseAdapter()
         while True:
             self.reset()
             while self.iteration <= 100:
@@ -287,7 +346,6 @@ class OrdersWorker(QtCore.QThread):
                     self.updateProgress.emit(
                         self.iteration, 'updateProgress ' + str(self.iteration) + '...')
                 time.sleep(0.05)
-            print 'Ended!'
 
     def toggle(self):
         self.isRunning = not self.isRunning
@@ -314,7 +372,7 @@ class Winthor():
                 </x:Body>
             </x:Envelope>''',
             headers={'Content-Type': 'text/xml; charset=utf-8'})
-        root = ET.fromstring(r.text)
+        root = ET.fromstring(r.text.encode('utf-8'))
         return [dict([(child.tag, child.text) for child in i]) for i in root[0][0][1]]
 
     def getProducts(self):
@@ -330,25 +388,41 @@ class Winthor():
                 </x:Body>
             </x:Envelope>''',
             headers={'Content-Type': 'text/xml; charset=utf-8'})
-        root = ET.fromstring(r.text)
+        root = ET.fromstring(r.text.encode('utf-8'))
         return [dict([(child.tag, child.text) for child in i]) for i in root[0][0][1]]
 
-    def getPrice(self, productId):
+    def getPrices(self):
         r = requests.post(
-            'http://192.168.24.13/PCSIS2699.EXE/soap/PC_Estoque',
+            'http://192.168.24.13/PCSIS2699.EXE/soap/PC_Preco',
             data='''
             <x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn3="urn:uPCPrecoIntf-PC_Preco">
                 <x:Header/>
                 <x:Body>
                     <urn3:Pesquisar>
-                        <urn3:Codigo_Produto>%s</urn3:Codigo_Produto>
                     </urn3:Pesquisar>
                 </x:Body>
             </x:Envelope>
-            ''' % productSku,
+            ''',
             headers={'Content-Type': 'text/xml; charset=utf-8'})
-        root = ET.fromstring(r.text)
-        return dict([(child.tag, child.text) for child in root[0][0][1][0]])
+        root = ET.fromstring(r.text.encode('utf-8'))
+        return [dict([(child.tag, child.text) for child in i]) for i in root[0][0][1]]
+
+    def getOrder(self, incrementId):
+        r = requests.post(
+            'http://192.168.24.13/PCSIS2699.EXE/soap/PC_Pedido',
+            data='''
+                <x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn12="urn:uPCPedidoIntf-PC_Pedido">
+                    <x:Header/>
+                    <x:Body>
+                        <urn12:PesquisarSituacaoPedido>
+                            <urn12:Numero_Pedido_Ecommerce>%s</urn12:Numero_Pedido_Ecommerce>
+                        </urn12:PesquisarSituacaoPedido>
+                    </x:Body>
+                </x:Envelope>
+            ''' % incrementId,
+            headers={'Content-Type': 'text/xml; charset=utf-8'})
+        root = ET.fromstring(r.text.encode('utf-8'))
+        return [dict([(child.tag, child.text) for child in i]) for i in root[0][0][1]]
 
 
 class Magento():
@@ -376,7 +450,6 @@ class Magento():
                 'Content-Type': 'text/xml; charset=UTF-8',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
         root = ET.fromstring(response.text)
-        print root[0][0][0].text
         return root[0][0][0].text
 
     def getProducts(self):
@@ -474,6 +547,138 @@ class Magento():
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
         root = ET.fromstring(response.text.encode('utf-8'))
         return root[0][0][0].text == 'true'
+
+    def getProductPrice(self, product_sku):
+        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
+            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
+                <x:Header/>
+                <x:Body>
+                    <urn:catalogProductInfo>
+                        <urn:sessionId>%s</urn:sessionId>
+                        <urn:productId>%s</urn:productId>
+                        <urn:identifierType>sku</urn:identifierType>
+                        <urn:attributes>
+                            <urn:attributes>
+                                <item>sku</item>
+                                <item>product_id</item>
+                                <item>price</item>
+                                <item>special_price</item>
+                                <item>special_from_date</item>
+                                <item>special_to_date</item>
+                            </urn:attributes>
+                            <urn:additional_attributes/>
+                        </urn:attributes>
+                    </urn:catalogProductInfo>
+                </x:Body>
+            </x:Envelope>
+            ''' % (self.session, product_sku),
+            headers={
+                'Host': 'papelex.lojaemteste.com.br',
+                'SOAPAction': 'urn:Action',
+                'Content-Type': 'text/xml; charset=UTF-8',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
+        root = ET.fromstring(response.text.encode('utf-8'))
+        return dict([
+            (prop.tag, prop.text)
+            if 'ns1:ArrayOfString' not in prop.attrib.values()
+            else (prop.tag, [subprop.text for subprop in prop])
+            for prop in root[0][0][0]
+        ])
+
+
+    def setProductPrice(self, product):
+        query = ''
+        for field in ['price', 'special_price', 'special_from_date', 'special_to_date']:
+            if field not in product: continue
+            query += '<urn:%s>%s</urn:%s>' % (field, product[field], field)
+        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
+            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
+                <x:Header/>
+                <x:Body>
+                    <urn:catalogProductUpdate>
+                        <urn:sessionId>%s</urn:sessionId>
+                        <urn:product>%s</urn:product>
+                        <urn:identifierType>sku</urn:identifierType>
+                        <urn:productData>
+                            %s
+                        </urn:productData>
+                    </urn:catalogProductUpdate>
+                </x:Body>
+            </x:Envelope>
+            ''' % (self.session, product['sku'], query),
+            headers={
+                'Host': 'papelex.lojaemteste.com.br',
+                'SOAPAction': 'urn:Action',
+                'Content-Type': 'text/xml; charset=UTF-8',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
+        root = ET.fromstring(response.text.encode('utf-8'))
+        return root[0][0][0].text == 'true'
+
+    def getOrders(self, today=False):
+        today_filter = '''
+            <filters>
+                <complex_filter>
+                    <item>
+                        <key>created_at</key>
+                        <value>
+                            <key>gteq</key>
+                            <value>%s 00:00:00</value>
+                        </value>
+                    </item>
+                </complex_filter>
+            </filters>
+        ''' % (date.today() - timedelta(1)).strftime('%Y-%m-%d')
+        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
+            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
+                <x:Header/>
+                <x:Body>
+                    <urn:salesOrderList>
+                        <urn:sessionId>%s</urn:sessionId>
+                        %s
+                    </urn:salesOrderList>
+                </x:Body>
+            </x:Envelope>
+            ''' % (self.session, today_filter if today else ''),
+            headers={
+                'Host': 'papelex.lojaemteste.com.br',
+                'SOAPAction': 'urn:Action',
+                'Content-Type': 'text/xml; charset=UTF-8',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
+        root = ET.fromstring(response.text.encode('utf-8'))
+        return [
+            dict([
+                (prop.tag, prop.text)
+                if 'ns1:ArrayOfString' not in prop.attrib.values()
+                else (prop.tag, [subprop.text for subprop in prop])
+                for prop in item
+            ])
+            for item in root[0][0][0]
+        ]
+
+    def getOrder(self, incrementId):
+        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
+            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
+                <x:Header/>
+                <x:Body>
+                    <urn:salesOrderInfo>
+                        <urn:sessionId>%s</urn:sessionId>
+                        <urn:orderIncrementId>%s</urn:orderIncrementId>
+                    </urn:salesOrderInfo>
+                </x:Body>
+            </x:Envelope>''' % (self.session, incrementId),
+            headers={
+                'Host': 'papelex.lojaemteste.com.br',
+                'SOAPAction': 'urn:Action',
+                'Content-Type': 'text/xml; charset=UTF-8',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
+        root = ET.fromstring(response.text.encode('utf-8'))
+        return dict([
+            (prop.tag, prop.text)
+            if 'ns1:ArrayOfString' not in prop.attrib.values()
+            else (prop.tag, [subprop.text for subprop in prop])
+            for prop in root[0][0][0]
+        ])
+
 
 class ErrorMessage(QtGui.QWidget):
     def __init__(self):
