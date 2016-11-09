@@ -6,7 +6,12 @@ import requests
 import xmltodict
 import xml.etree.ElementTree as ET
 import math
-from datetime import datetime
+import json
+from datetime import datetime, date, timedelta
+from collections import OrderedDict
+from magento import Magento
+import traceback
+
 
 class Routine9813(WinthorRoutine):
     def __init__(self, *args):
@@ -96,22 +101,15 @@ class Routine9813(WinthorRoutine):
         self.ordersProgressBar.setGeometry(QtCore.QRect(20, 10, 361, 23))
         self.ordersProgressBar.setProperty("value", 24)
         self.ordersProgressBar.setObjectName("ordersProgressBar")
-        self.ordersLog = QtGui.QTextEdit(self)
+        self.ordersHeader = [u'Integração', u'Num. pedido', u'Comprado Em', u'Status', u'Cliente', u'CPF/CNPJ', u'Items', u'Total', u'CEP']
+        self.ordersTable = QtGui.QTableView(self)
+        self.ordersTable.setModel(QTableModel(self, [[]], self.ordersHeader))
         row = QtGui.QHBoxLayout()
         row.addWidget(QtGui.QLabel("Progresso:"))
         row.addWidget(self.ordersProgressBar)
-        self.ordersStopButton = QtGui.QPushButton('Parar', self)
-        self.ordersStopButton.clicked.connect(self.toggleOrdersWorker)
-        self.ordersRestartButton = QtGui.QPushButton('Reiniciar', self)
-        self.ordersRestartButton.clicked.connect(self.resetOrdersWorker)
-        buttonRow = QtGui.QHBoxLayout()
-        buttonRow.addStretch(1)
-        buttonRow.addWidget(self.ordersStopButton)
-        buttonRow.addWidget(self.ordersRestartButton)
         layout = QtGui.QVBoxLayout()
         layout.addLayout(row)
-        layout.addWidget(self.ordersLog)
-        layout.addLayout(buttonRow)
+        layout.addWidget(self.ordersTable)
         self.ordersTab.setLayout(layout)
 
     def setPriceProgress(self, progress, log):
@@ -156,26 +154,10 @@ class Routine9813(WinthorRoutine):
         self.tabControl.setTabText(1, u'Estoque')
         self.stockStopButton.setText('Parar')
 
-    def setOrdersProgress(self, progress, log):
+    def setOrdersProgress(self, progress, ordersData):
         self.ordersProgressBar.setValue(progress)
-        self.ordersLog.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S')  + ': ' + log)
-        cursor = self.ordersLog.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.End)
-        self.ordersLog.setTextCursor(cursor)
-
-    def toggleOrdersWorker(self):
-        self.ordersWorker.toggle()
-        if self.ordersWorker.isRunning:
-            self.tabControl.setTabText(2, u'Pedidos')
-            self.ordersStopButton.setText('Parar')
-        else:
-            self.tabControl.setTabText(2, u'Pedidos (parado)')
-            self.ordersStopButton.setText('Continuar')
-
-    def resetOrdersWorker(self):
-        self.ordersWorker.reset()
-        self.tabControl.setTabText(2, u'Pedidos')
-        self.ordersStopButton.setText('Parar')
+        data = json.loads(ordersData)
+        self.ordersTable.setModel(QTableModel(self, data, self.ordersHeader))
 
     def closeEvent(self, event):
         self.priceWorker.finish()
@@ -197,7 +179,7 @@ class PriceWorker(QtCore.QThread):
                 self.reset()
                 self.updateProgress.emit(0, 'Progress: ' + str(0) + '%.')
 
-                # Get Winthor data 
+                # Get Winthor data
                 self.updateProgress.emit(0, 'Searching product prices on Winthor...')
                 w = Winthor()
                 winthor_products = w.getPrices()
@@ -304,7 +286,6 @@ class StockWorker(QtCore.QThread):
                 steps = int(math.ceil(len(products_qty)/STEP))
                 for i in range(steps):
                     prods = products_qty[int(i*STEP):int(i*STEP+STEP)]
-                    print prods
                     magento.setProductQuantities(prods)
                     self.updateProgress.emit(23 + (i+1)*77.0/steps, 'Progress: ' + str(23 + (i+1)*77.0/steps) + '%.')
                     self.updateProgress.emit(23 + (i+1)*77.0/steps, 'Updated ' + str(len(prods)) + ' products on Magento!')
@@ -337,15 +318,149 @@ class OrdersWorker(QtCore.QThread):
         QtCore.QThread.__init__(self)
 
     def run(self):
-        db = DatabaseAdapter()
+        db = DatabaseAdapter(user='PAPELEXTESTE', password='PAPELEXTESTE', alias='TESTE')
+        orders = {}
+        self.updateProgress.emit(50, json.dumps([[]]))
         while True:
-            self.reset()
-            while self.iteration <= 100:
-                if self.isRunning:
-                    self.iteration = self.iteration + 1
-                    self.updateProgress.emit(
-                        self.iteration, 'updateProgress ' + str(self.iteration) + '...')
-                time.sleep(0.05)
+            try:
+                self.reset()
+                m = Magento()
+                response = m.getOrders(today=True)
+                result = dict([(order['increment_id'], order) for order in response])
+                for key in result:
+                    if key in orders:
+                        orders[key].update(result[key])
+                    else:
+                        orders[key] = result[key]
+
+                for order_id, order in orders.iteritems():
+                    print m.getOrder(order['increment_id'])
+                    if 'integration' not in order:
+                        # check PCCLIENTFV
+                        query = "select count(*) COUNT from PCCLIENTFV where CGCENT = '" + order['customer_taxvat'] + "'"
+                        print query
+                        count = db.query(query)[0]['count']
+                        if count == 0:
+                            today = date.today().strftime('%Y-%m-%d')
+                            query = '''
+                                insert into PCCLIENTFV (IMPORTADO,TIPOOPERACAO,CGCENT,CLIENTE,IEENT,TELENT,CEPENT,CODUSUR1,CODPRACA,OBS,EMAIL,OBSERVACAO_PC,DTINCLUSAO,CODCLI,DTALTERACAO,DTNASC)
+                                values
+                                (
+                                    9,                                              -- IMPORTADO
+                                    'I',                                            -- TIPOOPERACAO
+                                    '%s',                                           -- CGCENT
+                                    '%s',                                           -- CLIENTE
+                                    'ISENTO',                                       -- IEENT
+                                    '%s',                                           -- TELENT
+                                    '%s',                                           -- CEPENT
+                                    1,                                              -- CODUSUR1
+                                    999999,                                         -- CODPRACA
+                                    'P',                                            -- OBS
+                                    '%s',                                           -- EMAIL
+                                    'Pedido Site %s',                               -- OBSERVACAO_PC
+                                    to_date('%s', 'YYYY-MM-DD'),                    -- DTINCLUSAO
+                                    null,                                           -- CODCLI
+                                    to_date('%s', 'YYYY-MM-DD'),                    -- DTALTERACAO
+                                    to_date('%s','YYYY-MM-DD')                      -- DTNASC
+                                )
+                            ''' % (order['customer_taxvat'], order['billing_name'], order['telephone'][-13:],
+                                    order['postcode'], order['customer_email'], order['increment_id'], today, today,
+                                    order['customer_dob'][:10] if 'customer_dob' in order else '1900-01-01')
+                            print query
+                            db.execute(query)
+                        order['integration'] = 'Pre-cadastro completo'
+                    if order['integration'] == 'Pre-cadastro completo':
+                        # check PCCLIENT
+                        query = "select count(*) count from PCCLIENT where regexp_replace(CGCENT, '[^0-9]', '') = '" + order['customer_taxvat'] + "'"
+                        print query
+                        count = db.query(query)[0]['count']
+                        if count > 0:
+                            order['integration'] = 'Cliente cadastrado'
+
+                    if order['integration'] == 'Cliente cadastrado':
+                        # check Address on PCCLIENT
+                        query = '''
+                            select CODCLI
+                            from PCCLIENT
+                            where regexp_replace(CGCENT, '[^0-9]', '') = '%s'
+                                and regexp_replace(CEPENT, '[^0-9]', '') = '%s'
+                        ''' % (order['customer_taxvat'], order['postcode'].replace('-', ''))
+                        print query
+                        result = db.query(query)
+                        if len(result) > 0:
+                            order['CODCLI'] = result[0]['codcli']
+                            order['CODENDENTCLI'] = None
+                            order['integration'] = 'Endereco cadastrado'
+                        # check Address on PCCLIENTENDENT
+                        query = '''
+                            select PCCLIENT.CODCLI, CODENDENTCLI
+                            from PCCLIENTENDENT, PCCLIENT
+                            where PCCLIENTENDENT.CODCLI = PCCLIENT.CODCLI
+                                and regexp_replace(PCCLIENT.CGCENT, '[^0-9]', '') = '%s'
+                                and regexp_replace(PCCLIENTENDENT.CEPENT, '[^0-9]', '') = '%s'
+                        ''' % (order['customer_taxvat'], order['postcode'].replace('-', ''))
+                        print query
+                        result = db.query(query)
+                        if len(result) > 0:
+                            order['CODENDENTCLI'] = result[0]['codendentcli']
+                            order['CODCLI'] = result[0]['codcli']
+                            order['integration'] = 'Endereco cadastrado'
+
+                    if order['integration'] == 'Endereco cadastrado':
+                        query = '''
+                            select 1
+                            from PCPEDCFV
+                            where NUMPEDRCA = '%s'
+                        ''' % (order['increment_id'])
+                        print query
+                        result = db.query(query)
+                        if len(result) == 0:
+                            # check PCPEDCFV
+                            query = '''
+                                insert into PCPEDCFV (IMPORTADO, NUMPEDRCA, CODUSUR, CGCCLI, DTABERTURAPEDPALM, DTFECHAMENTOPEDPALM, CODFILIAL, CODCOB, CODPLPAG, CONDVENDA, ORIGEMPED)
+                                values
+                                (
+                                    1,                                              -- IMPORTADO
+                                    '%s',                                           -- NUMPEDRCA
+                                    1,                                              -- CODUSUR
+                                    '%s',                                           -- CGCCLI
+                                    to_date('%s', 'YYYY-MM-DD'),                    -- DTABERTURAPEDPALM
+                                    to_date('%s', 'YYYY-MM-DD'),                    -- DTFECHAMENTOPEDPALM
+                                    1,                                              -- CODFILIAL
+                                    'SITE',                                         -- CODCOB
+                                    1,                                              -- CODPLPAG
+                                    1,                                              -- CONDVENDA
+                                    'F'                                             -- ORIGEMPED
+                                )
+                            ''' % (order['increment_id'], order['customer_taxvat'], order['created_at'][:10],
+                                    order['created_at'][:10])
+                            print query
+                            db.execute(query)                            
+                            order['integration'] = 'Pedido criado'
+                    if order['integration'].startswith('Pedido rejeitado') or order['integration'].startswith('Pedido criado'):
+                        query = '''
+                            select IMPORTADO, observacao_pc
+                            from PCPEDCFV
+                            where NUMPEDRCA = '%s'
+                        ''' % (order['increment_id'])
+                        print query
+                        result = db.query(query)[0]
+                        if result['importado'] == 2:
+                            # check PCPEDIFV
+                            order['integration'] = 'Concluido'
+                        elif result['importado'] == 3:
+                            order['integration'] = 'Pedido rejeitado: ' + result['observacao_pc']
+    
+                    sorted_orders = [
+                        [i.get('integration') or '', i['increment_id'], i['created_at'], i['status'], i['billing_name'], i['customer_taxvat'], i['total_item_count'], i['base_grand_total'], i['postcode'].replace('-', '')]
+                        for i in sorted(orders.values(), key=lambda x: x['created_at'])
+                    ]
+                    self.updateProgress.emit(50, json.dumps(sorted_orders))
+
+
+            except Exception as e:
+                print str(e)
+                traceback.print_exc()
 
     def toggle(self):
         self.isRunning = not self.isRunning
@@ -423,261 +538,6 @@ class Winthor():
             headers={'Content-Type': 'text/xml; charset=utf-8'})
         root = ET.fromstring(r.text.encode('utf-8'))
         return [dict([(child.tag, child.text) for child in i]) for i in root[0][0][1]]
-
-
-class Magento():
-
-    def __init__(self):
-        self.url='http://papelex.lojaemteste.com.br/index.php/api/v2_soap/?wsdl=1'
-        self.user='api.papelex'
-        self.password='teste123'
-        self.session = self.getSession()
-
-    def getSession(self):
-        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
-            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
-            <x:Header/>
-            <x:Body>
-                <urn:login>
-                    <urn:username>api.papelex</urn:username>
-                    <urn:apiKey>teste123</urn:apiKey>
-                </urn:login>
-            </x:Body>
-        </x:Envelope>''',
-            headers={
-                'Host': 'papelex.lojaemteste.com.br',
-                'SOAPAction': 'urn:Action',
-                'Content-Type': 'text/xml; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
-        root = ET.fromstring(response.text)
-        return root[0][0][0].text
-
-    def getProducts(self):
-        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
-            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
-                <x:Header/>
-                <x:Body>
-                    <urn:catalogProductList>
-                        <urn:sessionId>%s</urn:sessionId>
-                        <urn:filters>
-                            <urn:filter/>
-                            <urn:complex_filter/>
-                        </urn:filters>
-                        <urn:storeView></urn:storeView>
-                    </urn:catalogProductList>
-                </x:Body>
-            </x:Envelope>''' % self.session,
-            headers={
-                'Host': 'papelex.lojaemteste.com.br',
-                'SOAPAction': 'urn:Action',
-                'Content-Type': 'text/xml; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
-        root = ET.fromstring(response.text.encode('utf-8'))
-        print len(root[0][0][0])
-        return [
-            dict([
-                (prop.tag, prop.text)
-                if 'ns1:ArrayOfString' not in prop.attrib.values()
-                else (prop.tag, [subprop.text for subprop in prop])
-                for prop in item
-            ])
-            for storeView in root[0][0]
-            for item in storeView
-        ]
-
-    def getProductQuantities(self, product_skus=[]):
-        if len(product_skus) == 0:
-            products = self.getProducts()
-            product_skus = [p['sku'] for p in products]
-        query_skus = ['<item xsi:type="xsd:string">%s</item>' % i for i in product_skus]
-        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
-            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
-                <x:Header/>
-                <x:Body>
-                    <urn:catalogInventoryStockItemList>
-                        <urn:sessionId>%s</urn:sessionId>
-                        <urn:products>
-                            %s
-                        </urn:products>
-                    </urn:catalogInventoryStockItemList>
-                </x:Body>
-            </x:Envelope>
-            ''' % (self.session, '\n'.join(query_skus)),
-            headers={
-                'Host': 'papelex.lojaemteste.com.br',
-                'SOAPAction': 'urn:Action',
-                'Content-Type': 'text/xml; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
-        root = ET.fromstring(response.text.encode('utf-8'))
-        return [
-            dict([
-                (prop.tag, prop.text)
-                if 'ns1:ArrayOfString' not in prop.attrib.values()
-                else (prop.tag, [subprop.text for subprop in prop])
-                for prop in item
-            ])
-            for item in root[0][0][0]
-        ]
-
-    def setProductQuantities(self, products):
-        if len(products) == 0:
-            return False
-        product_query_skus = ['<item xsi:type="xsd:string">%s</item>' % p['sku'] for p in products]
-        qty_query_ids = ['<urn:data>\n<urn:qty>%s</urn:qty>\n</urn:data>' % p['qty'] for p in products]
-        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
-            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
-                <x:Header/>
-                <x:Body>
-                    <urn:catalogInventoryStockItemMultiUpdate>
-                        <urn:sessionId>%s</urn:sessionId>
-                        <urn:productIds>
-                            %s
-                        </urn:productIds>
-                        <urn:productData>
-                            %s
-                        </urn:productData>
-                    </urn:catalogInventoryStockItemMultiUpdate>
-                </x:Body>
-            </x:Envelope>
-            ''' % (self.session, '\n'.join(product_query_skus), '\n'.join(qty_query_ids)),
-            headers={
-                'Host': 'papelex.lojaemteste.com.br',
-                'SOAPAction': 'urn:Action',
-                'Content-Type': 'text/xml; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
-        root = ET.fromstring(response.text.encode('utf-8'))
-        return root[0][0][0].text == 'true'
-
-    def getProductPrice(self, product_sku):
-        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
-            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
-                <x:Header/>
-                <x:Body>
-                    <urn:catalogProductInfo>
-                        <urn:sessionId>%s</urn:sessionId>
-                        <urn:productId>%s</urn:productId>
-                        <urn:identifierType>sku</urn:identifierType>
-                        <urn:attributes>
-                            <urn:attributes>
-                                <item>sku</item>
-                                <item>product_id</item>
-                                <item>price</item>
-                                <item>special_price</item>
-                                <item>special_from_date</item>
-                                <item>special_to_date</item>
-                            </urn:attributes>
-                            <urn:additional_attributes/>
-                        </urn:attributes>
-                    </urn:catalogProductInfo>
-                </x:Body>
-            </x:Envelope>
-            ''' % (self.session, product_sku),
-            headers={
-                'Host': 'papelex.lojaemteste.com.br',
-                'SOAPAction': 'urn:Action',
-                'Content-Type': 'text/xml; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
-        root = ET.fromstring(response.text.encode('utf-8'))
-        return dict([
-            (prop.tag, prop.text)
-            if 'ns1:ArrayOfString' not in prop.attrib.values()
-            else (prop.tag, [subprop.text for subprop in prop])
-            for prop in root[0][0][0]
-        ])
-
-
-    def setProductPrice(self, product):
-        query = ''
-        for field in ['price', 'special_price', 'special_from_date', 'special_to_date']:
-            if field not in product: continue
-            query += '<urn:%s>%s</urn:%s>' % (field, product[field], field)
-        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
-            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
-                <x:Header/>
-                <x:Body>
-                    <urn:catalogProductUpdate>
-                        <urn:sessionId>%s</urn:sessionId>
-                        <urn:product>%s</urn:product>
-                        <urn:identifierType>sku</urn:identifierType>
-                        <urn:productData>
-                            %s
-                        </urn:productData>
-                    </urn:catalogProductUpdate>
-                </x:Body>
-            </x:Envelope>
-            ''' % (self.session, product['sku'], query),
-            headers={
-                'Host': 'papelex.lojaemteste.com.br',
-                'SOAPAction': 'urn:Action',
-                'Content-Type': 'text/xml; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
-        root = ET.fromstring(response.text.encode('utf-8'))
-        return root[0][0][0].text == 'true'
-
-    def getOrders(self, today=False):
-        today_filter = '''
-            <filters>
-                <complex_filter>
-                    <item>
-                        <key>created_at</key>
-                        <value>
-                            <key>gteq</key>
-                            <value>%s 00:00:00</value>
-                        </value>
-                    </item>
-                </complex_filter>
-            </filters>
-        ''' % (date.today() - timedelta(1)).strftime('%Y-%m-%d')
-        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
-            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
-                <x:Header/>
-                <x:Body>
-                    <urn:salesOrderList>
-                        <urn:sessionId>%s</urn:sessionId>
-                        %s
-                    </urn:salesOrderList>
-                </x:Body>
-            </x:Envelope>
-            ''' % (self.session, today_filter if today else ''),
-            headers={
-                'Host': 'papelex.lojaemteste.com.br',
-                'SOAPAction': 'urn:Action',
-                'Content-Type': 'text/xml; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
-        root = ET.fromstring(response.text.encode('utf-8'))
-        return [
-            dict([
-                (prop.tag, prop.text)
-                if 'ns1:ArrayOfString' not in prop.attrib.values()
-                else (prop.tag, [subprop.text for subprop in prop])
-                for prop in item
-            ])
-            for item in root[0][0][0]
-        ]
-
-    def getOrder(self, incrementId):
-        response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
-            data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
-                <x:Header/>
-                <x:Body>
-                    <urn:salesOrderInfo>
-                        <urn:sessionId>%s</urn:sessionId>
-                        <urn:orderIncrementId>%s</urn:orderIncrementId>
-                    </urn:salesOrderInfo>
-                </x:Body>
-            </x:Envelope>''' % (self.session, incrementId),
-            headers={
-                'Host': 'papelex.lojaemteste.com.br',
-                'SOAPAction': 'urn:Action',
-                'Content-Type': 'text/xml; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
-        root = ET.fromstring(response.text.encode('utf-8'))
-        return dict([
-            (prop.tag, prop.text)
-            if 'ns1:ArrayOfString' not in prop.attrib.values()
-            else (prop.tag, [subprop.text for subprop in prop])
-            for prop in root[0][0][0]
-        ])
 
 
 class ErrorMessage(QtGui.QWidget):

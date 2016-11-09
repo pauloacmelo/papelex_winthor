@@ -310,9 +310,9 @@ class Magento():
 
 if __name__ == '__main__':
     m = Magento()
-    print len(m.getOrders())
-    print len(m.getOrders(True))
-    print m.getOrder(100011314)
+    # print len(m.getOrders())
+    print m.getOrders(True)
+    # print m.getOrder(100011314)
 
     # print m.getProductPrice(11448)
     # print m.setProductPrice({'sku': '11448', 'product_id': '5601', 'old_price': '42.69', 'price': '52.69'})
