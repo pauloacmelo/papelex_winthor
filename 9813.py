@@ -435,8 +435,8 @@ class OrdersWorker(QtCore.QThread):
                             ''' % (order['increment_id'], order['customer_taxvat'], order['created_at'][:10],
                                     order['created_at'][:10])
                             print query
-                            db.execute(query)                            
-                            order['integration'] = 'Pedido criado'
+                            db.execute(query)
+                        order['integration'] = 'Pedido criado'
                     if order['integration'].startswith('Pedido rejeitado') or order['integration'].startswith('Pedido criado'):
                         query = '''
                             select IMPORTADO, observacao_pc
