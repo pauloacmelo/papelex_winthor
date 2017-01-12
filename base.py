@@ -129,7 +129,7 @@ class DatabaseAdapter:
 class WinthorRoutine(QtGui.QMainWindow):
     def __init__(self, number, name, username, db_pass, db_alias, db_user, *args):
         super(WinthorRoutine, self).__init__()
-        print(name)
+        print(number, name, username, db_pass, db_alias, db_user)
         self.number = number
         self.name = str(number) + u' - ' + name
         self.username = username

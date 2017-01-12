@@ -101,7 +101,7 @@ class Routine9813(WinthorRoutine):
         self.ordersProgressBar.setGeometry(QtCore.QRect(20, 10, 361, 23))
         self.ordersProgressBar.setProperty("value", 24)
         self.ordersProgressBar.setObjectName("ordersProgressBar")
-        self.ordersHeader = [u'Integração', u'Num. pedido', u'Comprado Em', u'Status', u'Cliente', u'CPF/CNPJ', u'Items', u'Total', u'CEP']
+        self.ordersHeader = [u'Integração', u'Num. pedido', u'Comprado Em', u'Status', u'Cliente', u'CPF/CNPJ', u'Items', u'Total', u'CEP', u'CODCLI', u'CODENDENTCLI', u'NUMPED']
         self.ordersTable = QtGui.QTableView(self)
         self.ordersTable.setModel(QTableModel(self, [[]], self.ordersHeader))
         row = QtGui.QHBoxLayout()
@@ -334,8 +334,10 @@ class OrdersWorker(QtCore.QThread):
                         orders[key] = result[key]
 
                 for order_id, order in orders.iteritems():
-                    print m.getOrder(order['increment_id'])
-                    if 'integration' not in order:
+                    print orders.keys()
+                    print order['increment_id'], order.get('integration')
+                    # print m.getOrder(order['increment_id'])
+                    if 'integration' not in order or order.get('integration') == '':
                         # check PCCLIENTFV
                         query = "select count(*) COUNT from PCCLIENTFV where CGCENT = '" + order['customer_taxvat'] + "'"
                         print query
@@ -353,7 +355,7 @@ class OrdersWorker(QtCore.QThread):
                                     'ISENTO',                                       -- IEENT
                                     '%s',                                           -- TELENT
                                     '%s',                                           -- CEPENT
-                                    1,                                              -- CODUSUR1
+                                    2236,                                           -- CODUSUR1
                                     999999,                                         -- CODPRACA
                                     'P',                                            -- OBS
                                     '%s',                                           -- EMAIL
@@ -368,16 +370,20 @@ class OrdersWorker(QtCore.QThread):
                                     order['customer_dob'][:10] if 'customer_dob' in order else '1900-01-01')
                             print query
                             db.execute(query)
-                        order['integration'] = 'Pre-cadastro completo'
-                    if order['integration'] == 'Pre-cadastro completo':
+                        order['integration'] = 'Efetivar Pre-cadastro'
+                    if order['integration'] == 'Efetivar Pre-cadastro':
                         # check PCCLIENT
                         query = "select count(*) count from PCCLIENT where regexp_replace(CGCENT, '[^0-9]', '') = '" + order['customer_taxvat'] + "'"
                         print query
                         count = db.query(query)[0]['count']
                         if count > 0:
-                            order['integration'] = 'Cliente cadastrado'
+                            query = "select max(codcli) codcli from PCCLIENT where regexp_replace(CGCENT, '[^0-9]', '') = '" + order['customer_taxvat'] + "'"
+                            print query
+                            codcli = db.query(query)[0]['codcli']
+                            order['CODCLI'] = codcli
+                            order['integration'] = 'Endereço pendente'
 
-                    if order['integration'] == 'Cliente cadastrado':
+                    if order['integration'] == 'Endereço pendente':
                         # check Address on PCCLIENT
                         query = '''
                             select CODCLI
@@ -389,8 +395,8 @@ class OrdersWorker(QtCore.QThread):
                         result = db.query(query)
                         if len(result) > 0:
                             order['CODCLI'] = result[0]['codcli']
-                            order['CODENDENTCLI'] = None
-                            order['integration'] = 'Endereco cadastrado'
+                            order['CODENDENTCLI'] = 'Cliente'
+                            order['integration'] = 'Pedido pendente'
                         # check Address on PCCLIENTENDENT
                         query = '''
                             select PCCLIENT.CODCLI, CODENDENTCLI
@@ -404,9 +410,9 @@ class OrdersWorker(QtCore.QThread):
                         if len(result) > 0:
                             order['CODENDENTCLI'] = result[0]['codendentcli']
                             order['CODCLI'] = result[0]['codcli']
-                            order['integration'] = 'Endereco cadastrado'
+                            order['integration'] = 'Pedido pendente'
 
-                    if order['integration'] == 'Endereco cadastrado':
+                    if order['integration'] == 'Pedido criado' or order['integration'].startswith('Pedido rejeitado') or order['integration'] == 'Pedido pendente':
                         query = '''
                             select 1
                             from PCPEDCFV
@@ -427,7 +433,7 @@ class OrdersWorker(QtCore.QThread):
                                     to_date('%s', 'YYYY-MM-DD'),                    -- DTABERTURAPEDPALM
                                     to_date('%s', 'YYYY-MM-DD'),                    -- DTFECHAMENTOPEDPALM
                                     1,                                              -- CODFILIAL
-                                    'SITE',                                         -- CODCOB
+                                    'D',                                            -- CODCOB
                                     1,                                              -- CODPLPAG
                                     1,                                              -- CONDVENDA
                                     'F'                                             -- ORIGEMPED
@@ -436,8 +442,23 @@ class OrdersWorker(QtCore.QThread):
                                     order['created_at'][:10])
                             print query
                             db.execute(query)
-                        order['integration'] = 'Pedido criado'
-                    if order['integration'].startswith('Pedido rejeitado') or order['integration'].startswith('Pedido criado'):
+
+                            full_order = m.getOrder(order['increment_id'])
+                            query_products = [
+                                " select %s, 1, '%s', to_date('%s', 'YYYY-MM-DD'), %s, %s, %s, %s from dual " % (
+                                    order['increment_id'], order['customer_taxvat'], order['created_at'][:10],
+                                    item['sku'], item['qty_ordered'], item['price'], index+1
+                                )
+                                for index, item in enumerate(full_order['items'])
+                            ]
+                            query = '''
+                                insert into PCPEDIFV (NUMPEDRCA,CODUSUR,CGCCLI,DTABERTURAPEDPALM,CODPROD,QT,PVENDA,NUMSEQ)
+                                %s
+                            ''' % ' union all '.join(query_products)
+                            print query
+                            db.execute(query)
+                            order['integration'] = 'Pedido criado'
+
                         query = '''
                             select IMPORTADO, observacao_pc
                             from PCPEDCFV
@@ -445,14 +466,22 @@ class OrdersWorker(QtCore.QThread):
                         ''' % (order['increment_id'])
                         print query
                         result = db.query(query)[0]
+                        query = '''
+                            select observacao_pc
+                            from PCPEDIFV
+                            where NUMPEDRCA = '%s'
+                        ''' % (order['increment_id'])
+                        print query
+                        result_items = db.query(query)
                         if result['importado'] == 2:
-                            # check PCPEDIFV
-                            order['integration'] = 'Concluido'
+                            order['integration'] = 'OK'
                         elif result['importado'] == 3:
-                            order['integration'] = 'Pedido rejeitado: ' + result['observacao_pc']
+                            order['integration'] = 'Pedido rejeitado: ' + '. '.join([result['observacao_pc']] + [i['observacao_pc'] for i in result_items])
+                        elif result['importado'] == 1:
+                            order['integration'] = 'Pedido Criado'
     
                     sorted_orders = [
-                        [i.get('integration') or '', i['increment_id'], i['created_at'], i['status'], i['billing_name'], i['customer_taxvat'], i['total_item_count'], i['base_grand_total'], i['postcode'].replace('-', '')]
+                        [i.get('integration') or '', i['increment_id'], i['created_at'], i['status'], i['billing_name'], i['customer_taxvat'], i['total_item_count'], i['base_grand_total'], i['postcode'].replace('-', ''), i.get('CODCLI'), i.get('CODENDENTCLI'), i.get('NUMPED')]
                         for i in sorted(orders.values(), key=lambda x: x['created_at'])
                     ]
                     self.updateProgress.emit(50, json.dumps(sorted_orders))

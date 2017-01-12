@@ -206,7 +206,7 @@ class Magento():
                     </item>
                 </complex_filter>
             </filters>
-        ''' % (date.today() - timedelta(3)).strftime('%Y-%m-%d')
+        ''' % (date.today() - timedelta(4)).strftime('%Y-%m-%d')
         response = requests.post('http://papelex.lojaemteste.com.br/index.php/api/v2_soap/index/',
             data='''<x:Envelope xmlns:x="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:Magento">
                 <x:Header/>
@@ -252,9 +252,11 @@ class Magento():
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'})
         root = ET.fromstring(response.text.encode('utf-8'))
         return dict([
-            (prop.tag, prop.text)
-            if 'ns1:ArrayOfString' not in prop.attrib.values()
-            else (prop.tag, [subprop.text for subprop in prop])
+            (prop.tag, prop.text) if 'Entity' not in ''.join(prop.attrib.values())
+            else (
+                (prop.tag, dict([(subprop.tag, subprop.text) for subprop in prop])) if 'EntityArray' not in ''.join(prop.attrib.values())
+                else (prop.tag, [dict([(subsubprop.tag, subsubprop.text) for subsubprop in subprop]) for subprop in prop])
+            )
             for prop in root[0][0][0]
         ])
 
