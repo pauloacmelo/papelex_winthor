@@ -28,7 +28,7 @@ class Routine9812(WinthorRoutine):
         but.clicked.connect(self.buttonAction)
         self.mainwindow.addWidget(but)
         self.table_view = QtGui.QTableView(self)
-        self.header = [u'Transportadora', u'Preço', u'Cubagem', u'Prazo']
+        self.header = [u'Transportadora', u'Preço', u'Cubagem', u'Prazo', u'Volumes']
         self.table_view.setModel(QTableModel(self, [[]], self.header))
         self.mainwindow.addWidget(self.table_view)
 
@@ -39,6 +39,8 @@ class Routine9812(WinthorRoutine):
             products = self.db.query("select PCPRODUT.PESOLIQ weight, PCPEDI.PVENDA cost_of_goods, PCPRODUT.LARGURAM3 width, PCPRODUT.ALTURAM3 height, PCPRODUT.COMPRIMENTOM3 length, PCPEDI.QT quantity, PCPRODUT.CODPROD sku_id, PCPRODUT.DESCRICAO description, 'true' can_group from PCPEDI, PCPRODUT where 1=1 and PCPEDI.CODPROD = PCPRODUT.CODPROD and NUMPED = %s" % order_id)
             products = [dict(p) for p in products]
             result = self.db.query("select regexp_replace(nvl(PCCLIENTENDENT.CEPENT, PCCLIENT.CEPENT), '[^0-9]', '') cep from PCPEDC inner join PCCLIENT on PCPEDC.CODCLI = PCCLIENT.CODCLI left join PCCLIENTENDENT on PCPEDC.CODCLI = PCCLIENTENDENT.CODCLI and PCPEDC.CODENDENTCLI = PCCLIENTENDENT.CODENDENTCLI where PCPEDC.NUMPED = %s" % order_id)
+            volumes = self.db.query("select papelex_totalvolumes(%s) result from dual" % order_id)[0]['result']
+            print(volumes)
             if len(result) == 0:
                 QtGui.QMessageBox.critical(self,
                     "Erro!",
@@ -47,7 +49,7 @@ class Routine9812(WinthorRoutine):
             cep = result[0]['cep']
             cep = cep[:5] + '-' + cep[-3:]
             quote = self.quotation(cep, products)
-            result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days']] for row in quote['content']['delivery_options']]
+            result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days'], volumes] for row in quote['content']['delivery_options']]
             self.updateTable(result)
         elif estimate_id and len(estimate_id) > 0:
             products = self.db.query("select PCPRODUT.PESOLIQ weight, PCORCAVENDAI.PVENDA cost_of_goods, PCPRODUT.LARGURAM3 width, PCPRODUT.ALTURAM3 height, PCPRODUT.COMPRIMENTOM3 length, PCORCAVENDAI.QT quantity, PCPRODUT.CODPROD sku_id, PCPRODUT.DESCRICAO description, 'true' can_group from PCORCAVENDAI, PCPRODUT where 1=1 and PCORCAVENDAI.CODPROD = PCPRODUT.CODPROD and NUMORCA = %s" % estimate_id)
@@ -61,7 +63,7 @@ class Routine9812(WinthorRoutine):
             cep = result[0]['cep']
             cep = cep[:5] + '-' + cep[-3:]
             quote = self.quotation(cep, products)
-            result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days']] for row in quote['content']['delivery_options']]
+            result = [[row['description'], row['final_shipping_cost'], row['cubic_weight'], row['delivery_estimate_business_days'], 0] for row in quote['content']['delivery_options']]
             self.updateTable(result)
         else:
             QtGui.QMessageBox.critical(self,
