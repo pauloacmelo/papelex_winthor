@@ -5,7 +5,7 @@ from urlparse import urlparse
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, date, timedelta
 import random
-
+import subprocess
 
 class Routine9814(WinthorRoutine):
     def __init__(self, *args):
@@ -35,26 +35,48 @@ class Routine9814(WinthorRoutine):
         self.searchGroupBox = QtGui.QGroupBox("Busca")
         self.searchGroupBox.setLayout(self.searchLayout)
         self.mainwindow.addWidget(self.searchGroupBox)
-        self.callLogsView = QtGui.QTreeView()
-        self.callLogsView.setRootIsDecorated(False)
-        self.callLogsView.setAlternatingRowColors(True)
-        self.callLogsView.setSortingEnabled(True)
-        self.mainwindow.addWidget(self.callLogsView)
+        self.callLogsTreeView = QtGui.QTreeView()
+        self.callLogsTreeView.setRootIsDecorated(False)
+        self.callLogsTreeView.setAlternatingRowColors(True)
+        self.callLogsTreeView.setSortingEnabled(True)
+        self.callLogsTreeView.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
+        self.callLogsTreeView.doubleClicked.connect(self.openCustomer)
+        self.mainwindow.addWidget(self.callLogsTreeView)
         self.dataModel = QtGui.QStandardItemModel(0, 4, self.mainwindow)
         self.dataModel.setHeaderData(0, QtCore.Qt.Horizontal, u"Data/Hora")
         self.dataModel.setHeaderData(1, QtCore.Qt.Horizontal, u"Cód. Cliente")
         self.dataModel.setHeaderData(2, QtCore.Qt.Horizontal, u"Telefone")
         self.dataModel.setHeaderData(3, QtCore.Qt.Horizontal, u"Cliente")
-        # for i in range(5):
-        #     self.dataModel.insertRow(i)
-        #     self.dataModel.setData(self.dataModel.index(i, 0), str(random.randint(1, 100000)))
-        #     self.dataModel.setData(self.dataModel.index(i, 1), u'FUNDAÇÂO BENÇÃOS DO SENHOR')
-        #     self.dataModel.setData(self.dataModel.index(i, 2), '(21) 2234-5678')
-        #     self.dataModel.setData(self.dataModel.index(i, 3), '31/01/2017 12:34:56')
-        self.callLogsView.setModel(self.dataModel)
-        self.callLogsView.sortByColumn(0, QtCore.Qt.DescendingOrder)
+        for i in range(5):
+            self.dataModel.insertRow(i)
+            self.dataModel.setData(self.dataModel.index(i, 0), '31/01/2017 12:34:56')
+            self.dataModel.setData(self.dataModel.index(i, 1), str(random.randint(1, 100000)))
+            self.dataModel.setData(self.dataModel.index(i, 2), '(21) 2234-5678')
+            self.dataModel.setData(self.dataModel.index(i, 3), u'FUNDAÇÂO BENÇÃOS DO SENHOR')
+        self.dataModel.insertRow(5)
+        self.dataModel.setData(self.dataModel.index(i, 0), '31/01/2017 12:34:55')
+        self.dataModel.setData(self.dataModel.index(i, 1), None)
+        self.dataModel.setData(self.dataModel.index(i, 2), '(21) 2234-5678')
+        self.dataModel.setData(self.dataModel.index(i, 3), None)
+        self.callLogsTreeView.setModel(self.dataModel)
+        self.callLogsTreeView.sortByColumn(0, QtCore.Qt.DescendingOrder)
 
-    def appendToServerLog(self, phoneNumber):
+    def openCustomer(self, index):
+        item = self.callLogsTreeView.selectedIndexes()[0]
+        selectedId = item.model().itemFromIndex(index.sibling(index.row(), 1)).text()
+        if not selectedId or selectedId == '':
+            return
+        cb = QtGui.QApplication.clipboard()
+        cb.clear(mode=cb.Clipboard)
+        cb.setText(selectedId, mode=cb.Clipboard)
+        args = ['W:\PCPPL\PCPPL1906.exe', self.username, self.db_pass, self.db_alias, self.db_user]
+        subprocess.call(args)
+
+    def formatPhoneNumber(self, phone):
+        return '(%s) %s-%s' % (phone[:3], phone[3:-4], phone[-4:])
+
+    def appendToServerLog(self, completePhoneNumber):
+        phoneNumber = completePhoneNumber[3:]
         clients = self.db.query('''
             select
               CODCLI, CLIENTE
@@ -86,13 +108,15 @@ class Routine9814(WinthorRoutine):
             select null, null from dual
             order by CODCLI desc, CLIENTE desc
         ''', tel=phoneNumber)
-        print clients
         index = min(len(clients)-1, 1)
         self.dataModel.insertRow(0)
         self.dataModel.setData(self.dataModel.index(0, 0), datetime.now().strftime('%d/%m/%Y %H:%M'))
         self.dataModel.setData(self.dataModel.index(0, 1), clients[index]['codcli'])
-        self.dataModel.setData(self.dataModel.index(0, 2), phoneNumber)
+        self.dataModel.setData(self.dataModel.index(0, 2), self.formatPhoneNumber(completePhoneNumber))
         self.dataModel.setData(self.dataModel.index(0, 3), clients[index]['cliente'])
+        self.toast(
+            self.formatPhoneNumber(completePhoneNumber),
+            u'%s%s%s' % (clients[index]['codcli'] or '',' - ' if clients[index]['codcli'] else '', clients[index]['cliente']) if clients[index]['cliente'] else u'Número desconhecido')
 
     def initWorkers(self):
         self.serverWorker = ServerWorker()
