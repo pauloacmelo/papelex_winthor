@@ -1,32 +1,103 @@
 # coding: utf-8
 from base import *
 from PySide import QtGui, QtCore
+from urlparse import urlparse
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, date, timedelta
+import random
 
 
 class Routine9814(WinthorRoutine):
     def __init__(self, *args):
         print(args)
-        super(Routine9814, self).__init__(args[4] or 9814, u'Alertas da Telefonia', *args)
+        super(Routine9814, self).__init__(args[4] or 9814, u'Alertas de Telefonia', *args)
         self.initUI()
         self.initWorkers()
+
+    def initUI(self):
+        super(Routine9814, self).initUI()
+        # self.serverLog = QtGui.QTextEdit(self)
+        self.searchClientNameLineEdit = QtGui.QLineEdit()
+        self.searchClientNameLabel = QtGui.QLabel("Nome Cliente:")
+        self.searchClientIDLineEdit = QtGui.QLineEdit()
+        self.searchClientIDLabel = QtGui.QLabel(u"Cód. Cliente:")
+        self.searchClientPhoneLineEdit = QtGui.QLineEdit()
+        self.searchClientPhoneLabel = QtGui.QLabel("Telefone:")
+        self.searchSubmitButton = QtGui.QPushButton('Pesquisar', self)
+        self.searchLayout = QtGui.QGridLayout()
+        self.searchLayout.addWidget(self.searchClientNameLabel, 0, 0)
+        self.searchLayout.addWidget(self.searchClientNameLineEdit, 0, 1, 1, 4)
+        self.searchLayout.addWidget(self.searchClientPhoneLabel, 1, 0)
+        self.searchLayout.addWidget(self.searchClientPhoneLineEdit, 1, 1)
+        self.searchLayout.addWidget(self.searchClientIDLabel, 1, 2)
+        self.searchLayout.addWidget(self.searchClientIDLineEdit, 1, 3, 1, 2)
+        self.searchLayout.addWidget(self.searchSubmitButton, 2, 4)
+        self.searchGroupBox = QtGui.QGroupBox("Busca")
+        self.searchGroupBox.setLayout(self.searchLayout)
+        self.mainwindow.addWidget(self.searchGroupBox)
+        self.callLogsView = QtGui.QTreeView()
+        self.callLogsView.setRootIsDecorated(False)
+        self.callLogsView.setAlternatingRowColors(True)
+        self.callLogsView.setSortingEnabled(True)
+        self.mainwindow.addWidget(self.callLogsView)
+        self.dataModel = QtGui.QStandardItemModel(0, 4, self.mainwindow)
+        self.dataModel.setHeaderData(0, QtCore.Qt.Horizontal, u"Data/Hora")
+        self.dataModel.setHeaderData(1, QtCore.Qt.Horizontal, u"Cód. Cliente")
+        self.dataModel.setHeaderData(2, QtCore.Qt.Horizontal, u"Telefone")
+        self.dataModel.setHeaderData(3, QtCore.Qt.Horizontal, u"Cliente")
+        # for i in range(5):
+        #     self.dataModel.insertRow(i)
+        #     self.dataModel.setData(self.dataModel.index(i, 0), str(random.randint(1, 100000)))
+        #     self.dataModel.setData(self.dataModel.index(i, 1), u'FUNDAÇÂO BENÇÃOS DO SENHOR')
+        #     self.dataModel.setData(self.dataModel.index(i, 2), '(21) 2234-5678')
+        #     self.dataModel.setData(self.dataModel.index(i, 3), '31/01/2017 12:34:56')
+        self.callLogsView.setModel(self.dataModel)
+        self.callLogsView.sortByColumn(0, QtCore.Qt.DescendingOrder)
+
+    def appendToServerLog(self, phoneNumber):
+        clients = self.db.query('''
+            select
+              CODCLI, CLIENTE
+            from PCCLIENT
+            where
+              regexp_replace(TELCONJUGE, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELEMPR, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELCOM, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELENT1, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELENT, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELCOB, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELCELENT, '[^0-9]', '') like '%' || :tel
+            union all
+            select
+              CODCLI, CLIENTE
+            from PCCLIENTFV
+            where
+              regexp_replace(TELENT1, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELCOM, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELCOB, '[^0-9]', '') like '%' || :tel or
+              regexp_replace(TELENT, '[^0-9]', '') like '%' || :tel
+            union all
+            select
+              PCCLIENT.CODCLI, PCCLIENT.CLIENTE
+            from PCCONTATO
+            left join PCCLIENT on PCCLIENT.CODCLI = PCCONTATO.CODCLI
+            where regexp_replace(TELEFONE, '[^0-9]', '') like '%' || :tel
+            union all
+            select null, null from dual
+            order by CODCLI desc, CLIENTE desc
+        ''', tel=phoneNumber)
+        print clients
+        index = min(len(clients)-1, 1)
+        self.dataModel.insertRow(0)
+        self.dataModel.setData(self.dataModel.index(0, 0), datetime.now().strftime('%d/%m/%Y %H:%M'))
+        self.dataModel.setData(self.dataModel.index(0, 1), clients[index]['codcli'])
+        self.dataModel.setData(self.dataModel.index(0, 2), phoneNumber)
+        self.dataModel.setData(self.dataModel.index(0, 3), clients[index]['cliente'])
 
     def initWorkers(self):
         self.serverWorker = ServerWorker()
         self.serverWorker.logToScreen.connect(self.appendToServerLog)
         self.serverWorker.start()
-
-    def initUI(self):
-        super(Routine9814, self).initUI()
-        self.serverLog = QtGui.QTextEdit(self)
-        self.mainwindow.addWidget(self.serverLog)
-
-    def appendToServerLog(self, message):
-        self.serverLog.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S')  + ': ' + message + '\n')
-        cursor = self.serverLog.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.End)
-        self.serverLog.setTextCursor(cursor)
 
 
 class ServerWorker(QtCore.QThread):
@@ -35,50 +106,29 @@ class ServerWorker(QtCore.QThread):
     def __init__(self):
         QtCore.QThread.__init__(self)
 
-    def makeCustomHandler(self, customPrint):
+    def makeCustomHandler(self, logCall):
         class CustomHandler(BaseHTTPRequestHandler, object):
             def __init__(self, *args, **kwargs):
-                self.customPrint = customPrint
+                self.logCall = logCall
                 super(CustomHandler, self).__init__(*args, **kwargs)
 
             def do_GET(self):
-                request_path = self.path
-                self.customPrint("\n----- Request Start ----->\n")
-                self.customPrint("Path: " + request_path)
-                self.customPrint("Headers: %s" % self.headers)
-                self.customPrint("<----- Request End -----\n")
+                self.logCall(self.path[1:])
                 self.send_response(200)
-                # self.send_header("Set-Cookie", "foo=bar")
-                # self.end_headers()
                 
             def do_POST(self):
-                request_path = self.path
-                self.customPrint("\n----- Request Start ----->\n")
-                self.customPrint(request_path)
-                request_headers = self.headers
-                content_length = request_headers.getheaders('content-length')
-                length = int(content_length[0]) if content_length else 0
-                self.customPrint(request_headers)
-                self.customPrint(self.rfile.read(length))
-                self.customPrint("<----- Request End -----\n")
-                self.send_response(200)
+                pass
 
             do_PUT = do_POST
             do_DELETE = do_GET
         return CustomHandler
 
-    def customPrint(self, message):
-        
-        print(message)
-
     def run(self):
         ip = '127.0.0.1'
-        port = 81
-        self.logToScreen.emit('Listening on http://127.0.0.1:%s' % port)
-        def customPrint(x):
+        port = 8001
+        def logCall(x):
             self.logToScreen.emit(x)
-            print(x)
-        HandlerClass = self.makeCustomHandler(customPrint)
+        HandlerClass = self.makeCustomHandler(logCall)
         server = HTTPServer((ip, port), HandlerClass)
         server.serve_forever()
 
