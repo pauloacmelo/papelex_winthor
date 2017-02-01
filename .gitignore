@@ -8,3 +8,4 @@ Examples
 build
 dist
 *.spec
+sqlnet.log
