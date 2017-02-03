@@ -85,8 +85,8 @@ class Routine9814(WinthorRoutine):
             logs = self.db.query('''
                 select DATAHORA, CODCLI, TELEFONE, CLIENTE
                 from PAPELEX_LOG_LIGACOES
-                where DATAHORA > trunc(sysdate) - 7
-            ''')
+                where DATAHORA > trunc(sysdate) - 7 and NOME_GUERRA = :routineuser
+            ''', routineuser=self.username)
             for index, log in enumerate(logs):
                 self.dataModel.insertRow(index)
                 self.dataModel.setData(self.dataModel.index(index, 0), log['datahora'].strftime('%Y-%m-%d %H:%M:%S'))
@@ -113,7 +113,7 @@ class Routine9814(WinthorRoutine):
     def formatPhoneNumber(self, phone):
         if len(phone) <= 4:
             return phone
-        return '(%s) %s-%s' % (phone[:3], phone[3:-4], phone[-4:])
+        return '(%s) %s-%s' % (phone[:2], phone[2:-4], phone[-4:])
 
     def appendToServerLog(self, completePhoneNumber):
         try:
@@ -128,7 +128,7 @@ class Routine9814(WinthorRoutine):
                     order by CODCLI desc, CLIENTE desc
                 ''', tel=completePhoneNumber)
             else:
-                phoneNumber = completePhoneNumber[3:]
+                phoneNumber = completePhoneNumber[2:]
                 clients = self.db.query('''
                     select
                       CODCLI, CLIENTE
