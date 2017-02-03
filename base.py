@@ -103,7 +103,7 @@ class PicButton(QtGui.QAbstractButton):
         painter.drawPixmap(event.rect(), pix)
 
     def move(self, x, y):
-        print('Moving', self)
+        # print('Moving', self)
         super(PicButton, self).move(x, y)
         self.show()
 
@@ -292,7 +292,7 @@ class WinthorRoutine(QtGui.QMainWindow):
         self.minimizeButton.move(self.geometry().width() - 90, 15)
         self.maximizeButton.move(self.geometry().width() - 60, 12)
         self.closeButton.move(self.geometry().width() - 30, 10)
-        print("Window has been resized...", self.geometry().left(), self.geometry().width(), self.geometry().height())
+        # print("Window has been resized...", self.geometry().left(), self.geometry().width(), self.geometry().height())
 
     def closeEvent(self, event):
         self.db.close()
