@@ -16,7 +16,6 @@ class Routine9814(WinthorRoutine):
 
     def initUI(self):
         super(Routine9814, self).initUI()
-        # self.serverLog = QtGui.QTextEdit(self)
         self.searchClientNameLineEdit = QtGui.QLineEdit()
         self.searchClientNameLabel = QtGui.QLabel("Nome Cliente:")
         self.searchClientIDLineEdit = QtGui.QLineEdit()
@@ -35,79 +34,82 @@ class Routine9814(WinthorRoutine):
         self.searchGroupBox = QtGui.QGroupBox("Busca")
         self.searchGroupBox.setLayout(self.searchLayout)
         self.mainwindow.addWidget(self.searchGroupBox)
-        self.callLogsTreeView = QtGui.QTreeView()
+        self.callLogsTreeView = MyTreeView()
         self.callLogsTreeView.setRootIsDecorated(False)
         self.callLogsTreeView.setAlternatingRowColors(True)
         self.callLogsTreeView.setSortingEnabled(True)
         self.callLogsTreeView.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
         self.callLogsTreeView.doubleClicked.connect(self.openCustomer)
+        self.callLogsTreeView.onPressEnter.connect(self.openCustomer)
         self.mainwindow.addWidget(self.callLogsTreeView)
         self.dataModel = QtGui.QStandardItemModel(0, 4, self.mainwindow)
         self.dataModel.setHeaderData(0, QtCore.Qt.Horizontal, u"Data/Hora")
         self.dataModel.setHeaderData(1, QtCore.Qt.Horizontal, u"Cód. Cliente")
         self.dataModel.setHeaderData(2, QtCore.Qt.Horizontal, u"Telefone")
         self.dataModel.setHeaderData(3, QtCore.Qt.Horizontal, u"Cliente")
-        for i in range(5):
-            self.dataModel.insertRow(i)
-            self.dataModel.setData(self.dataModel.index(i, 0), '31/01/2017 12:34:56')
-            self.dataModel.setData(self.dataModel.index(i, 1), str(random.randint(1, 100000)))
-            self.dataModel.setData(self.dataModel.index(i, 2), '(21) 2234-5678')
-            self.dataModel.setData(self.dataModel.index(i, 3), u'FUNDAÇÂO BENÇÃOS DO SENHOR')
-        self.dataModel.insertRow(5)
-        self.dataModel.setData(self.dataModel.index(i, 0), '31/01/2017 12:34:55')
-        self.dataModel.setData(self.dataModel.index(i, 1), None)
-        self.dataModel.setData(self.dataModel.index(i, 2), '(21) 2234-5678')
-        self.dataModel.setData(self.dataModel.index(i, 3), None)
+        # for i in range(5):
+        #     self.dataModel.insertRow(i)
+        #     self.dataModel.setData(self.dataModel.index(i, 0), '31/01/2017 12:34:56')
+        #     self.dataModel.setData(self.dataModel.index(i, 1), str(random.randint(1, 100000)))
+        #     self.dataModel.setData(self.dataModel.index(i, 2), '(21) 2234-5678')
+        #     self.dataModel.setData(self.dataModel.index(i, 3), u'FUNDAÇÂO BENÇÃOS DO SENHOR')
+        # self.dataModel.insertRow(5)
+        # self.dataModel.setData(self.dataModel.index(i, 0), '31/01/2017 12:34:55')
+        # self.dataModel.setData(self.dataModel.index(i, 1), None)
+        # self.dataModel.setData(self.dataModel.index(i, 2), '(21) 2234-5678')
+        # self.dataModel.setData(self.dataModel.index(i, 3), None)
         self.callLogsTreeView.setModel(self.dataModel)
         self.callLogsTreeView.sortByColumn(0, QtCore.Qt.DescendingOrder)
 
-    def openCustomer(self, index):
-        item = self.callLogsTreeView.selectedIndexes()[0]
-        selectedId = item.model().itemFromIndex(index.sibling(index.row(), 1)).text()
-        if not selectedId or selectedId == '':
-            return
-        cb = QtGui.QApplication.clipboard()
-        cb.clear(mode=cb.Clipboard)
-        cb.setText(selectedId, mode=cb.Clipboard)
-        args = ['W:\PCPPL\PCPPL1906.exe', self.username, self.db_pass, self.db_alias, self.db_user]
-        subprocess.call(args)
-
     def formatPhoneNumber(self, phone):
+        if len(phone) <= 4:
+            return phone
         return '(%s) %s-%s' % (phone[:3], phone[3:-4], phone[-4:])
 
     def appendToServerLog(self, completePhoneNumber):
-        phoneNumber = completePhoneNumber[3:]
-        clients = self.db.query('''
-            select
-              CODCLI, CLIENTE
-            from PCCLIENT
-            where
-              regexp_replace(TELCONJUGE, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELEMPR, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELCOM, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELENT1, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELENT, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELCOB, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELCELENT, '[^0-9]', '') like '%' || :tel
-            union all
-            select
-              CODCLI, CLIENTE
-            from PCCLIENTFV
-            where
-              regexp_replace(TELENT1, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELCOM, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELCOB, '[^0-9]', '') like '%' || :tel or
-              regexp_replace(TELENT, '[^0-9]', '') like '%' || :tel
-            union all
-            select
-              PCCLIENT.CODCLI, PCCLIENT.CLIENTE
-            from PCCONTATO
-            left join PCCLIENT on PCCLIENT.CODCLI = PCCONTATO.CODCLI
-            where regexp_replace(TELEFONE, '[^0-9]', '') like '%' || :tel
-            union all
-            select null, null from dual
-            order by CODCLI desc, CLIENTE desc
-        ''', tel=phoneNumber)
+        if len(completePhoneNumber) <= 4:
+            phoneNumber = completePhoneNumber
+            clients = self.db.query('''
+                select '' CODCLI, NOME CLIENTE
+                from PCEMPR
+                where regexp_replace(RAMAL, '[^0-9]', '') = :tel
+                union all
+                select null, null from dual
+                order by CODCLI desc, CLIENTE desc
+            ''', tel=completePhoneNumber)
+        else:
+            phoneNumber = completePhoneNumber[3:]
+            clients = self.db.query('''
+                select
+                  CODCLI, CLIENTE
+                from PCCLIENT
+                where
+                  regexp_replace(TELCONJUGE, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELEMPR, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELCOM, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELENT1, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELENT, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELCOB, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELCELENT, '[^0-9]', '') like '%' || :tel
+                union all
+                select
+                  CODCLI, CLIENTE
+                from PCCLIENTFV
+                where
+                  regexp_replace(TELENT1, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELCOM, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELCOB, '[^0-9]', '') like '%' || :tel or
+                  regexp_replace(TELENT, '[^0-9]', '') like '%' || :tel
+                union all
+                select
+                  PCCLIENT.CODCLI, PCCLIENT.CLIENTE
+                from PCCONTATO
+                left join PCCLIENT on PCCLIENT.CODCLI = PCCONTATO.CODCLI
+                where regexp_replace(TELEFONE, '[^0-9]', '') like '%' || :tel
+                union all
+                select null, null from dual
+                order by CODCLI desc, CLIENTE desc
+            ''', tel=phoneNumber)
         index = min(len(clients)-1, 1)
         self.dataModel.insertRow(0)
         self.dataModel.setData(self.dataModel.index(0, 0), datetime.now().strftime('%d/%m/%Y %H:%M'))
@@ -122,6 +124,34 @@ class Routine9814(WinthorRoutine):
         self.serverWorker = ServerWorker()
         self.serverWorker.logToScreen.connect(self.appendToServerLog)
         self.serverWorker.start()
+
+    def openCustomer(self):
+        index = self.callLogsTreeView.selectedIndexes()[0]
+        selectedId = index.model().itemFromIndex(index.sibling(index.row(), 1)).text()
+        if not selectedId or selectedId == '':
+            return
+        OpenSalesRoutineWorker(selectedId, self.username, self.db_pass, self.db_alias, self.db_user)
+
+
+class OpenSalesRoutineWorker(QtCore.QThread):
+    def __init__(self, selectedId, username, db_pass, db_alias, db_user):
+        cb = QtGui.QApplication.clipboard()
+        cb.clear(mode=cb.Clipboard)
+        cb.setText(selectedId, mode=cb.Clipboard)
+        args = ['W:\PCPPL\PCPPL1906.exe', username, db_pass, db_alias, db_user, '1906']
+        subprocess.call(args)
+
+
+class MyTreeView(QtGui.QTreeView):
+    onPressEnter = QtCore.Signal()
+
+    def __init__(self):
+        QtGui.QTreeView.__init__(self)
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Enter or event.key() == QtCore.Qt.Key_Return:
+            self.onPressEnter.emit()
+        QtGui.QTreeView.keyPressEvent(self, event)
 
 
 class ServerWorker(QtCore.QThread):
