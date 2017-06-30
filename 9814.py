@@ -94,8 +94,7 @@ class Routine9814(WinthorRoutine):
                 self.dataModel.setData(self.dataModel.index(index, 2), self.formatPhoneNumber(log['telefone']))
                 self.dataModel.setData(self.dataModel.index(index, 3), log['cliente'])
         except Exception as e:
-            ErrorMessage("Erro!",
-                u"Ligação recebida de %s.\nErro ao conectar no banco de dados para buscar informações." % self.formatPhoneNumber(completePhoneNumber))
+            ErrorMessage("Erro!", u"Erro ao conectar no banco de dados para buscar informações.")
 
     def closeEvent(self, event):
         super(Routine9814, self).closeEvent(event)
@@ -113,7 +112,7 @@ class Routine9814(WinthorRoutine):
     def formatPhoneNumber(self, phone):
         if len(phone) <= 4:
             return phone
-        return '(%s) %s-%s' % (phone[:2], phone[2:-4], phone[-4:])
+        return '(%s) %s-%s' % (phone[:3], phone[3:-4], phone[-4:])
 
     def appendToServerLog(self, completePhoneNumber):
         try:
