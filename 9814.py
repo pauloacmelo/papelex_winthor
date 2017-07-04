@@ -17,6 +17,8 @@ import re
 #   CLIENTE VARCHAR(100)
 # );
 
+AREA_CODE_SIZE = 3
+
 class Routine9814(WinthorRoutine):
     def __init__(self, *args):
         print(args)
@@ -112,7 +114,7 @@ class Routine9814(WinthorRoutine):
     def formatPhoneNumber(self, phone):
         if len(phone) <= 4:
             return phone
-        return '(%s) %s-%s' % (phone[:3], phone[3:-4], phone[-4:])
+        return '(%s) %s-%s' % (phone[:AREA_CODE_SIZE], phone[AREA_CODE_SIZE:-4], phone[-4:])
 
     def appendToServerLog(self, completePhoneNumber):
         try:
@@ -127,7 +129,7 @@ class Routine9814(WinthorRoutine):
                     order by CODCLI desc, CLIENTE desc
                 ''', tel=completePhoneNumber)
             else:
-                phoneNumber = completePhoneNumber[2:]
+                phoneNumber = completePhoneNumber[AREA_CODE_SIZE:]
                 clients = self.db.query('''
                     select
                       CODCLI, CLIENTE
